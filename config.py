@@ -23,6 +23,9 @@ client = OpenAI(
 # Modèle utilisé pour les appels de chat
 MODEL_NAME = "gpt-oss-120b"
 
+# Modèle utilisé pour la vision
+VISION_MODEL_NAME = "gemini-3-flash-preview"
+
 # Configuration de Wikipédia en français
 wikipedia.set_lang("fr")
 

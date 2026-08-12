@@ -5,6 +5,7 @@ Schémas des outils (function calling) fournis au modèle OpenAI.
 Séparés de la logique métier pour ne toucher qu'à un seul endroit
 lors de l'ajout ou de la modification d'un outil.
 """
+from tools.registry import sync_custom_tools
 
 TOOLS_SCHEMA = [
     {
@@ -248,5 +249,146 @@ TOOLS_SCHEMA = [
                 "required": ["action"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_image",
+            "description": "Analyse visuellement une image locale ou une capture d'écran (extraire du texte, lire des erreurs, décrire un schéma, identifier des éléments à l'écran).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_path": {
+                        "type": "string",
+                        "description": "Le chemin du fichier image à analyser (ex: '/home/adam/Images/screenshot.png')."
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Consigne précise sur ce que l'agent doit observer ou chercher dans l'image (ex: 'Que dit ce message d'erreur ?')."
+                    }
+                },
+                "required": ["image_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_custom_tool",
+            "description": "Permet d'écrire et sauvegarder un nouvel outil Python réutilisable lorsque la demande nécessite une fonctionnalité inexistante.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Nom de la fonction Python en snake_case (ex: 'fetch_crypto_price')."
+                    },
+                    "python_code": {
+                        "type": "string",
+                        "description": "Code Python autonome complet définissant la fonction."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Explication de ce que fait la fonction et ses paramètres."
+                    }
+                },
+                "required": ["tool_name", "python_code", "description"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_joke",
+            "description": "Raconte une blague amusante pour développeurs ou geeks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "language": {
+                        "type": "string",
+                        "description": "Langue de la blague ('fr', 'en', 'es', 'de'). Par défaut 'fr'."
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Catégorie de blague ('neutral', 'chuck', 'all'). Par défaut 'neutral'."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_control",
+            "description": "Permet de contrôler Spotify : lire de la musique, mettre en pause, passer un morceau, changer le volume ou chercher des playlists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["play", "pause", "next", "previous", "rewind", "current", "volume"],
+                        "description": "L'action Spotify à exécuter."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Le nom du morceau, de l'artiste ou de la playlist (pour action='play' ou 'search_playlist')."
+                    },
+                    "volume": {
+                        "type": "integer",
+                        "description": "Le niveau de volume de 0 à 100 (pour action='volume')."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_contacts",
+            "description": "Gère le carnet d'adresses : ajouter, chercher, lister ou supprimer des contacts (Nom -> Numéro).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "get", "list", "delete"],
+                        "description": "Action à effectuer sur les contacts."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Le nom du contact (ex: 'Adam', 'Maman')."
+                    },
+                    "phone_number": {
+                        "type": "string",
+                        "description": "Numéro au format international commençant par '+' (ex: '+33612345678')."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp_message",
+            "description": "Envoie un message WhatsApp à un destinataire en utilisant soit son prénom/nom enregistrés, soit directement son numéro.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipient": {
+                        "type": "string",
+                        "description": "Nom du contact dans le carnet d'adresses (ex: 'Adam', 'Maman') OU numéro au format '+33...'."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Le texte du message à envoyer."
+                    }
+                },
+                "required": ["recipient", "message"]
+            }
+        }
     }
 ]
+
+sync_custom_tools(TOOLS_SCHEMA)
