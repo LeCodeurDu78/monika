@@ -5,6 +5,7 @@ Schémas des outils (function calling) fournis au modèle OpenAI.
 Séparés de la logique métier pour ne toucher qu'à un seul endroit
 lors de l'ajout ou de la modification d'un outil.
 """
+from tools.registry import sync_custom_tools
 
 TOOLS_SCHEMA = [
     {
@@ -269,5 +270,32 @@ TOOLS_SCHEMA = [
                 "required": ["image_path"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_custom_tool",
+            "description": "Permet d'écrire et sauvegarder un nouvel outil Python réutilisable lorsque la demande nécessite une fonctionnalité inexistante.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Nom de la fonction Python en snake_case (ex: 'fetch_crypto_price')."
+                    },
+                    "python_code": {
+                        "type": "string",
+                        "description": "Code Python autonome complet définissant la fonction."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Explication de ce que fait la fonction et ses paramètres."
+                    }
+                },
+                "required": ["tool_name", "python_code", "description"]
+            }
+        }
     }
 ]
+
+sync_custom_tools(TOOLS_SCHEMA)

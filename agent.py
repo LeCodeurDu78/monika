@@ -49,6 +49,10 @@ def _execute_tool_call(tool_call) -> str:
     func_name = tool_call.function.name
     func_args = json.loads(tool_call.function.arguments)
 
+    # Nettoyage des arguments vides envoyés par le modèle si la fonction n'attend rien
+    if "" in func_args:
+        del func_args[""]
+
     # 🛑 DEMANDE DE CONFIRMATION SI L'OUTIL EST "run_script"
     if func_name == "run_script":
         cmd = func_args.get("command", "")
