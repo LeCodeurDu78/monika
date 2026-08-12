@@ -4,12 +4,7 @@ tools/spotify_tools.py
 Contrôle Spotify robuste : Fallback automatique playerctl si compte non-Premium.
 """
 
-import os
 import subprocess
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
-
-SCOPE = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
 
 
 def _run_playerctl(args: list) -> tuple[bool, str]:

@@ -341,6 +341,53 @@ TOOLS_SCHEMA = [
                 "required": ["action"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_contacts",
+            "description": "Gère le carnet d'adresses : ajouter, chercher, lister ou supprimer des contacts (Nom -> Numéro).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "get", "list", "delete"],
+                        "description": "Action à effectuer sur les contacts."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Le nom du contact (ex: 'Adam', 'Maman')."
+                    },
+                    "phone_number": {
+                        "type": "string",
+                        "description": "Numéro au format international commençant par '+' (ex: '+33612345678')."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp_message",
+            "description": "Envoie un message WhatsApp à un destinataire en utilisant soit son prénom/nom enregistrés, soit directement son numéro.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipient": {
+                        "type": "string",
+                        "description": "Nom du contact dans le carnet d'adresses (ex: 'Adam', 'Maman') OU numéro au format '+33...'."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Le texte du message à envoyer."
+                    }
+                },
+                "required": ["recipient", "message"]
+            }
+        }
     }
 ]
 

@@ -9,19 +9,21 @@ import sys
 import importlib
 import inspect
 
-from tools.system_tools import open_application, system_control, get_system_stats
-from tools.weather_tools import get_weather
-from tools.file_tools import manage_files
-from tools.email_tools import email_control
-from tools.search_tools import web_search
-from tools.calendar import calendar_control
-from tools.project import create_full_project
-from tools.terminal import run_script
+from tools.system.system_tools import open_application, system_control, get_system_stats
+from tools.utils.weather_tools import get_weather
+from tools.system.file_tools import manage_files
+from tools.social.email_tools import email_control
+from tools.system.search_tools import web_search
+from tools.social.calendar_tools import calendar_control
+from tools.utils.project_tools import create_full_project
+from tools.system.terminal_tools import run_script
 from tools.memory import memory_control
-from tools.vision_tools import analyze_image
+from tools.system.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool
-from tools.joke_tools import get_joke
-from tools.spotify_tools import spotify_control
+from tools.utils.joke_tools import get_joke
+from tools.utils.spotify_tools import spotify_control
+from tools.social.whatsapp_tools import send_whatsapp_message
+from tools.social.contact_tools import manage_contacts
 
 # Registre de base des fonctions Python exécutables
 AVAILABLE_TOOLS = {
@@ -40,7 +42,8 @@ AVAILABLE_TOOLS = {
     "create_custom_tool": create_custom_tool,
     "get_joke": get_joke,
     "spotify_control": spotify_control,
-
+    "send_whatsapp_message": send_whatsapp_message,
+    "manage_contacts": manage_contacts,
 }
 
 
