@@ -49,7 +49,7 @@ def system_control(action: str, value: int = 5, filename: str = None) -> str:
             return f"Volume diminué de {val}%."
 
         elif action == "screenshot":
-            images_dir = os.path.expanduser("~/Images")
+            images_dir = os.path.expanduser("~/Pictures/Screenshots")
             os.makedirs(images_dir, exist_ok=True)  # S'assure que le dossier existe
 
             # Si l'utilisateur a donné un nom, on l'utilise (en ajoutant .png si oublié)

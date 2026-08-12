@@ -14,6 +14,7 @@ from tools.calendar import calendar_control
 from tools.project import create_full_project
 from tools.terminal import run_script
 from tools.memory import memory_control
+from tools.vision_tools import analyze_image
 
 AVAILABLE_TOOLS = {
     "open_application": open_application,
@@ -27,4 +28,5 @@ AVAILABLE_TOOLS = {
     "create_full_project": create_full_project,
     "run_script": run_script,
     "memory_control": memory_control,
+    "analyze_image": analyze_image,
 }
