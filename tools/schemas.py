@@ -218,5 +218,35 @@ TOOLS_SCHEMA = [
                 "required": ["command"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "memory_control",
+            "description": "Stocke ou recherche des informations importantes à long terme (préférences de l'utilisateur, chemins de projets, règles de code, faits personnels).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["save", "search", "list"],
+                        "description": "'save' pour enregistrer/mettre à jour une mémoire, 'search' pour chercher par mot-clé, 'list' pour tout afficher."
+                    },
+                    "key": {
+                        "type": "string",
+                        "description": "Clé d'identification de l'information (ex: 'editeur_prefere', 'repertoire_code', 'regle_git')."
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "L'information exacte à retenir (requise si action='save')."
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Catégorie facultative (ex: 'preferences', 'projets', 'regles')."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
     }
 ]
