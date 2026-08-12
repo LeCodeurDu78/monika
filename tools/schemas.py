@@ -295,6 +295,52 @@ TOOLS_SCHEMA = [
                 "required": ["tool_name", "python_code", "description"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_joke",
+            "description": "Raconte une blague amusante pour développeurs ou geeks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "language": {
+                        "type": "string",
+                        "description": "Langue de la blague ('fr', 'en', 'es', 'de'). Par défaut 'fr'."
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Catégorie de blague ('neutral', 'chuck', 'all'). Par défaut 'neutral'."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_control",
+            "description": "Permet de contrôler Spotify : lire de la musique, mettre en pause, passer un morceau, changer le volume ou chercher des playlists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["play", "pause", "next", "previous", "rewind", "current", "volume"],
+                        "description": "L'action Spotify à exécuter."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Le nom du morceau, de l'artiste ou de la playlist (pour action='play' ou 'search_playlist')."
+                    },
+                    "volume": {
+                        "type": "integer",
+                        "description": "Le niveau de volume de 0 à 100 (pour action='volume')."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
     }
 ]
 

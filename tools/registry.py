@@ -20,6 +20,8 @@ from tools.terminal import run_script
 from tools.memory import memory_control
 from tools.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool
+from tools.joke_tools import get_joke
+from tools.spotify_tools import spotify_control
 
 # Registre de base des fonctions Python exécutables
 AVAILABLE_TOOLS = {
@@ -36,6 +38,9 @@ AVAILABLE_TOOLS = {
     "memory_control": memory_control,
     "analyze_image": analyze_image,
     "create_custom_tool": create_custom_tool,
+    "get_joke": get_joke,
+    "spotify_control": spotify_control,
+
 }
 
 
