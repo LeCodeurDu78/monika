@@ -13,6 +13,7 @@ from tools.search_tools import web_search
 from tools.calendar import calendar_control
 from tools.project import create_full_project
 from tools.terminal import run_script
+from tools.memory import memory_control
 
 AVAILABLE_TOOLS = {
     "open_application": open_application,
@@ -25,4 +26,5 @@ AVAILABLE_TOOLS = {
     "calendar_control": calendar_control,
     "create_full_project": create_full_project,
     "run_script": run_script,
+    "memory_control": memory_control,
 }
