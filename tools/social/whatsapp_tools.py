@@ -5,6 +5,8 @@ Envoi de messages WhatsApp fiables via Playwright.
 """
 
 import os
+from urllib.parse import quote
+
 from playwright.sync_api import sync_playwright
 from tools.social.contact_tools import get_phone_by_name
 
@@ -23,7 +25,7 @@ def send_whatsapp_message(recipient: str, message: str) -> str:
 
         # Nettoyage du numéro
         clean_phone = phone_number.replace("+", "").replace(" ", "")
-        url = f"https://web.whatsapp.com/send?phone={clean_phone}&text={message}"
+        url = f"https://web.whatsapp.com/send?phone={clean_phone}&text={quote(message)}"
 
         with sync_playwright() as p:
             # Lancement d'un navigateur Firefox persistant
