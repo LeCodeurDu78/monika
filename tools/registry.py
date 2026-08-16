@@ -38,6 +38,7 @@ from tools.utils.joke_tools import get_joke
 from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
+from tools.utils.reminder_tools import reminder_control
 
 
 def _schema(name: str, description: str, properties: dict, required: list | None = None) -> dict:
@@ -75,6 +76,7 @@ AVAILABLE_TOOLS = {
     "spotify_control": spotify_control,
     "send_whatsapp_message": send_whatsapp_message,
     "manage_contacts": manage_contacts,
+    "reminder_control": reminder_control,
 }
 
 # Schémas fournis au modèle pour le function calling, un par outil de base.
@@ -252,6 +254,22 @@ TOOLS_SCHEMA = [
             "message": {"type": "string", "description": "Le texte du message à envoyer."},
         },
         ["recipient", "message"],
+    ),
+    _schema(
+        "reminder_control",
+        "Crée, liste ou supprime des rappels avec échéance (ex: \"rappelle-moi de renouveler mon passeport avant le 20 mars\"). Un rappel arrivé à échéance est annoncé automatiquement par Monika, sans que l'utilisateur ait à demander.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["add", "list", "delete", "due"],
+                "description": "'add' pour créer un rappel, 'list' pour voir les prochains rappels, 'delete' pour en supprimer un, 'due' pour voir ceux arrivés à échéance et pas encore annoncés.",
+            },
+            "message": {"type": "string", "description": "Le texte du rappel (requis pour action='add')."},
+            "due_at": {"type": "string", "description": "Date et heure d'échéance au format ISO (ex: '2026-08-20T09:00:00'), requis pour action='add'."},
+            "reminder_id": {"type": "integer", "description": "Identifiant du rappel à supprimer (requis pour action='delete', voir la liste via action='list')."},
+            "limit": {"type": "integer", "description": "Nombre de rappels à afficher pour action='list' (par défaut 10)."},
+        },
+        ["action"],
     ),
 ]
 

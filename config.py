@@ -35,6 +35,8 @@ EMBEDDING_MODEL_NAME = "gemini-embedding-001"
 # Configuration de Wikipédia en français
 wikipedia.set_lang("fr")
 
+REMINDER_CHECK_INTERVAL_SECONDS=5
+
 # Prompt système par défaut de l'agent
 SYSTEM_PROMPT = (
     "Tu es Monika, un assistant IA poli, concis et efficace. "
