@@ -1,8 +1,8 @@
 """
-tools/search_tools.py
------------------------
-Outil de recherche en ligne : Wikipédia (culture générale, définitions)
-et DuckDuckGo (actualité, recherches Web générales).
+tools/utils/search_tools.py
+------------------------------
+Recherche en ligne : Wikipédia (culture générale, définitions) et
+DuckDuckGo (actualité, recherches Web générales).
 """
 
 import wikipedia
@@ -14,13 +14,10 @@ def web_search(source: str, query: str) -> str:
     try:
         query_clean = query.strip()
 
-        # RECHERCHE WIKIPÉDIA
         if source == "wikipedia":
-            # Récupère un résumé concis (2 phrases) de la page Wikipédia
             summary = wikipedia.summary(query_clean, sentences=2, auto_suggest=True)
             return f"Résultat Wikipédia pour '{query_clean}' :\n{summary}"
 
-        # RECHERCHE WEB GÉNÉRALE (DuckDuckGo)
         elif source == "duckduckgo":
             with DDGS() as ddgs:
                 results = list(ddgs.text(query_clean, max_results=3))
@@ -40,7 +37,6 @@ def web_search(source: str, query: str) -> str:
         return "Source de recherche non reconnue (utilisez 'wikipedia' ou 'duckduckgo')."
 
     except wikipedia.exceptions.DisambiguationError as e:
-        # En cas d'ambiguïté (ex: plusieurs pages avec le même nom)
         options = ", ".join(e.options[:5])
         return f"La recherche '{query}' est ambiguë. Options possibles : {options}."
     except wikipedia.exceptions.PageError:

@@ -1,34 +1,21 @@
 """
 voice_tts.py
 ------------
-Synthèse vocale locale via XTTS v2 (Coqui TTS), avec clonage de voix à partir
-d'un court échantillon audio de référence. Plus lourd que Piper (GPU
-fortement recommandé), mais qualité et expressivité nettement supérieures.
+Synthèse vocale locale via XTTS v2 (Coqui TTS)
 """
 
 import re
-
 import numpy as np
 import soundfile as sf
 import torch
 import torchaudio
 
-# Contournement d'un bug de mismatch de sous-librairies cuDNN présent dans
-# certains builds récents de PyTorch (CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH).
-# Coût quasi nul ici : cuDNN n'intervient que pour le resampling de l'audio de
-# référence, pas pour la génération elle-même.
 torch.backends.cudnn.enabled = False
 
 
 def _load_with_soundfile(path, *args, **kwargs):
-    """Remplace torchaudio.load(), qui depuis torchaudio 2.9 dépend uniquement
-    de torchcodec (donc des .so FFmpeg système). Sur une rolling release comme
-    Arch, ces .so précompilés se désynchronisent régulièrement de la version
-    de FFmpeg installée (voir libtorchcodec_coreN.so). soundfile s'appuie sur
-    libsndfile, indépendant de FFmpeg, et suffit largement pour lire un simple
-    .wav de référence."""
     data, sample_rate = sf.read(str(path), dtype="float32", always_2d=True)
-    waveform = torch.from_numpy(data.T)  # (canaux, échantillons), comme torchaudio
+    waveform = torch.from_numpy(data.T)
     return waveform, sample_rate
 
 
@@ -63,11 +50,10 @@ def _get_tts() -> TTS:
 
 
 def _clean_for_speech(text: str) -> str:
-    """Nettoie le texte avant synthèse. Monika (le LLM) peut répondre avec du
-    markdown ou des blocs de code, qui sonneraient très mal lus à voix haute."""
+    """Nettoie le texte avant synthèse."""
     text = re.sub(r"```.*?```", " J'ai affiché du code dans le terminal. ", text, flags=re.DOTALL)
     text = re.sub(r"[*_`#]+", "", text)
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # liens markdown -> texte du lien
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -87,5 +73,5 @@ def speak(text: str) -> None:
         return
 
     audio = np.asarray(wav, dtype=np.float32)
-    sample_rate = tts.synthesizer.output_sample_rate  # 24000 Hz pour XTTS v2
+    sample_rate = tts.synthesizer.output_sample_rate
     play_audio(audio, sample_rate)

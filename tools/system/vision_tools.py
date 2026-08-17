@@ -1,7 +1,7 @@
 """
-tools/vision_tools.py
------------------------
-Module d'analyse d'images robuste pour Monika.
+tools/system/vision_tools.py
+-----------------------------
+Analyse d'images pour Monika via un modèle vision multimodal.
 """
 
 import base64
@@ -16,6 +16,7 @@ def _encode_image(image_path: str) -> str:
 
 
 def analyze_image(image_path: str, prompt: str = "Décris cette image en détail et explique ce qu'elle contient.") -> str:
+    """Analyse une image locale ou une capture d'écran avec le modèle vision."""
     try:
         path = os.path.expanduser(image_path)
         if not os.path.exists(path):
@@ -25,7 +26,6 @@ def analyze_image(image_path: str, prompt: str = "Décris cette image en détail
         mime_type = "image/png" if ext == "png" else f"image/{ext if ext in ['jpeg', 'jpg', 'webp'] else 'png'}"
         base64_image = _encode_image(path)
 
-        # Appel avec max_tokens augmenté
         response = client.chat.completions.create(
             model=VISION_MODEL_NAME,
             messages=[

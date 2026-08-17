@@ -2,10 +2,6 @@
 voice_audio.py
 --------------
 Capture micro avec détection de fin de phrase (VAD) et lecture audio.
-
-Tout passe par sounddevice (PortAudio) pour n'avoir qu'un seul backend audio
-en entrée ET en sortie, plutôt que de dépendre d'un lecteur externe (ex:
-ffplay/ffmpeg) pour la sortie de la synthèse vocale (XTTS v2).
 """
 
 import sys
@@ -25,13 +21,7 @@ FRAME_SAMPLES = int(SAMPLE_RATE * FRAME_MS / 1000)
 
 
 def record_until_silence() -> np.ndarray:
-    """Enregistre depuis le micro par défaut jusqu'à SILENCE_MS de silence
-    consécutif APRÈS le début de la parole (le silence avant que tu parles
-    ne compte pas, tu as le temps de démarrer).
-
-    Retourne un tableau numpy float32 mono à SAMPLE_RATE Hz, normalisé [-1, 1].
-    Tableau vide si rien n'a été détecté comme de la parole.
-    """
+    """Enregistre depuis le micro par défaut jusqu'à SILENCE_MS."""
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     silence_frames_needed = max(1, SILENCE_MS // FRAME_MS)
     max_frames = int(MAX_RECORD_SECONDS * 1000 / FRAME_MS)
@@ -72,8 +62,7 @@ def record_until_silence() -> np.ndarray:
 
 
 def play_audio(audio_float32: np.ndarray, sample_rate: int) -> None:
-    """Joue un tableau audio float32 [-1, 1] sur la sortie par défaut, en bloquant
-    jusqu'à la fin de la lecture (pour ne pas parler par-dessus la réponse suivante)."""
+    """Joue un tableau audio float32 [-1, 1] sur la sortie par défaut."""
     if audio_float32.size == 0:
         return
     sd.play(audio_float32, samplerate=sample_rate, blocking=True)

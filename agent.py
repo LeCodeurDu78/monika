@@ -1,16 +1,11 @@
 """
 agent.py
 ---------
-Boucle de conversation principale de l'agent Monika avec ReAct (Reason + Act),
-mémoire persistante et Context Pruning automatique pour gérer les tokens.
+Boucle de conversation principale de Monika (ReAct : Reason + Act), avec
+mémoire persistante et pruning automatique du contexte.
 
-Deux modes de session sont exposés :
-- run_monika()       : mode texte dans le terminal (pratique pour déboguer sans micro).
-- run_monika_voice() : mode vocal (micro + synthèse vocale), utilisé par main.py.
-
-Les deux partagent la même boucle générique `_run_session`, qui ne diffère
-que par la façon dont l'entrée utilisateur est recueillie et la réponse
-restituée.
+run_monika() gère le mode texte, run_monika_voice() le mode vocal ; les deux
+partagent la boucle générique `_run_session`.
 """
 
 import json
@@ -26,20 +21,14 @@ from voice.voice_stt import transcribe
 from voice.voice_tts import speak
 
 
-# Limite maximale de messages dans le contexte avant pruning (élagage).
 MAX_CONTEXT_MESSAGES = 18
-
-# Longueur au-delà de laquelle un résultat d'outil est tronqué par le pruning.
 TOOL_RESULT_MAX_CHARS = 1500
 TOOL_RESULT_TRUNCATED_CHARS = 1200
 
 
 def _prune_context(messages: list) -> list:
-    """Compacte et élague l'historique des messages pour éviter d'exploser le contexte.
-
-    1. Raccourcit les sorties d'outils trop longues (logs, gros fichiers).
-    2. Conserve le prompt système et réduit les anciens échanges.
-    """
+    """Tronque les résultats d'outils trop longs et élague les anciens
+    échanges pour rester sous MAX_CONTEXT_MESSAGES."""
     for msg in messages:
         if isinstance(msg, dict) and msg.get("role") == "tool":
             content = str(msg.get("content", ""))
@@ -52,8 +41,8 @@ def _prune_context(messages: list) -> list:
     if len(messages) <= MAX_CONTEXT_MESSAGES:
         return messages
 
-    system_msg = messages[0]  # On conserve le SYSTEM_PROMPT
-    recent_messages = messages[-(MAX_CONTEXT_MESSAGES - 1):]  # On garde les derniers échanges
+    system_msg = messages[0]
+    recent_messages = messages[-(MAX_CONTEXT_MESSAGES - 1):]
 
     pruned = [
         system_msg,
@@ -67,26 +56,19 @@ def _prune_context(messages: list) -> list:
     return pruned
 
 def _execute_tool_call(tool_call, interactive: bool = True) -> str:
-    """Exécute un appel d'outil demandé par le modèle et retourne son résultat en texte.
+    """Exécute un appel d'outil demandé par le modèle et renvoie son résultat.
 
-    `interactive=False` (utilisé pour les tâches planifiées exécutées en tâche
-    de fond, voir `_start_scheduler_watcher`) :
-    - refuse automatiquement run_script au lieu de demander une confirmation
-      au clavier : un thread de fond ne doit jamais rester bloqué sur un
-      `input()` pendant qu'une session interactive tourne en parallèle.
-    - refuse aussi scheduler_control(action='add') : sans ce garde-fou, un
-      modèle qui interprète mal l'instruction peut re-planifier la tâche au
-      lieu de l'exécuter, ce qui la reporterait indéfiniment sans jamais rien
-      faire. Le refus est renvoyé comme résultat d'outil, ce qui laisse au
-      modèle une chance de se corriger et d'appeler le bon outil dans la
-      même boucle ReAct.
+    interactive=False (tâches planifiées exécutées en arrière-plan, voir
+    `_start_scheduler_watcher`) refuse scheduler_control(action='add') : sans
+    ce garde-fou, une tâche déjà à échéance pourrait se re-planifier au lieu
+    de s'exécuter, la reportant indéfiniment.
     """
     func_name = tool_call.function.name
     func_args = json.loads(tool_call.function.arguments)
     func_args.pop("", None)  # certains modèles envoient une clé "" vide quand l'outil n'a pas de paramètres
 
     if not interactive:
-         if func_name == "scheduler_control" and func_args.get("action") == "add":
+        if func_name == "scheduler_control" and func_args.get("action") == "add":
             return (
                 "Action refusée : impossible de planifier une nouvelle tâche depuis l'exécution "
                 "d'une tâche déjà à échéance (risque de la reporter indéfiniment sans jamais l'accomplir). "
@@ -100,12 +82,9 @@ def _execute_tool_call(tool_call, interactive: bool = True) -> str:
 
 
 def process_user_message(messages: list, max_turns: int = 10, interactive: bool = True) -> str:
-    """Envoie l'historique de conversation au modèle et exécute la boucle ReAct
-    avec Context Pruning.
+    """Envoie l'historique au modèle et exécute la boucle ReAct avec pruning.
 
-    `interactive=False` désactive les confirmations bloquantes (voir
-    `_execute_tool_call`) ; utilisé pour l'exécution autonome des tâches
-    planifiées par `_start_scheduler_watcher`.
+    interactive=False désactive les confirmations bloquantes, voir `_execute_tool_call`.
     """
     for _ in range(max_turns):
         messages[:] = _prune_context(messages)
@@ -118,13 +97,11 @@ def process_user_message(messages: list, max_turns: int = 10, interactive: bool 
         )
         response_message = response.choices[0].message
 
-        # Si aucun outil n'est appelé, le modèle renvoie sa réponse finale.
         if not response_message.tool_calls:
             bot_reply = response_message.content or "Action terminée sans message retourné."
             messages.append({"role": "assistant", "content": bot_reply})
             return bot_reply
 
-        # ReAct : exécution des outils demandés.
         messages.append(response_message)
         for tool_call in response_message.tool_calls:
             function_result = _execute_tool_call(tool_call, interactive=interactive)
@@ -144,16 +121,12 @@ def _run_session(
     on_reply: Callable[[str], None],
     on_exit: Callable[[], None] = lambda: None,
 ) -> None:
-    """Boucle générique de session : recueille l'entrée utilisateur, exécute le
-    tour ReAct puis transmet la réponse à `on_reply`.
+    """Boucle générique de session : lit l'entrée utilisateur, exécute un tour
+    ReAct puis transmet la réponse à `on_reply`.
 
-    `get_user_input` doit renvoyer :
-    - une chaîne non vide -> traitée comme message utilisateur ;
-    - une chaîne vide ("") -> rien à traiter, on redemande sans spammer le modèle ;
-    - None -> fin de session (mot de sortie, EOF, saisie annulée...).
-
-    Ctrl+C interrompt proprement la session à tout moment (lecture, appel modèle
-    ou exécution d'un outil) sans remonter d'exception à l'appelant.
+    `get_user_input` renvoie une chaîne (message à traiter), "" (rien à
+    traiter, on redemande) ou None (fin de session). Ctrl+C interrompt la
+    session proprement à tout moment.
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -187,7 +160,7 @@ def _read_voice_input() -> Optional[str]:
     """Enregistre et transcrit un tour de parole ; renvoie None si un mot de sortie est prononcé."""
     audio = record_until_silence()
     if audio.size == 0:
-        return ""  # rien entendu, on réécoute sans spammer le modèle
+        return ""
 
     text = transcribe(audio)
     if not text:
@@ -198,16 +171,8 @@ def _read_voice_input() -> Optional[str]:
 
 
 def _start_reminder_watcher(announce: Callable[[str], None]) -> threading.Event:
-    """Démarre un thread démon qui vérifie périodiquement (toutes les
-    REMINDER_CHECK_INTERVAL_SECONDS) les rappels arrivés à échéance et les
-    annonce via `announce`, sans que l'utilisateur ait à demander quoi que
-    ce soit.
-
-    Renvoie un `threading.Event` : l'appelant doit faire `.set()` dessus à la
-    fin de la session pour arrêter proprement le thread (sinon il continue de
-    tourner en arrière-plan jusqu'à la fin du processus, sans faire de mal
-    grâce à `daemon=True`, mais autant le stopper proprement).
-    """
+    """Démarre un thread démon qui annonce les rappels à échéance toutes les
+    REMINDER_CHECK_INTERVAL_SECONDS. Faire `.set()` sur l'Event renvoyé arrête le thread."""
     stop_event = threading.Event()
 
     def _loop() -> None:
@@ -221,20 +186,12 @@ def _start_reminder_watcher(announce: Callable[[str], None]) -> threading.Event:
 
 
 def _start_scheduler_watcher(on_result: Callable[[str], None]) -> threading.Event:
-    """Démarre un thread démon qui vérifie périodiquement (toutes les
-    SCHEDULER_CHECK_INTERVAL_SECONDS) les tâches planifiées arrivées à
-    échéance (scheduler_control) et les exécute de façon AUTONOME : chaque
+    """Démarre un thread démon qui exécute les tâches planifiées à échéance
+    (toutes les SCHEDULER_CHECK_INTERVAL_SECONDS) de façon autonome : chaque
     instruction est envoyée au modèle dans une conversation isolée (jamais
-    celle de l'utilisateur, pour ne pas polluer son contexte), qui peut alors
-    appeler n'importe quel outil pour l'accomplir. Le résultat final est
-    transmis à `on_result`.
-
-    Exécuté avec interactive=False : une tâche planifiée qui tenterait
-    d'exécuter une commande Bash est automatiquement refusée plutôt que de
-    bloquer le thread sur une confirmation clavier.
-
-    Renvoie un `threading.Event` à positionner (`.set()`) pour arrêter le
-    thread proprement en fin de session, comme `_start_reminder_watcher`.
+    celle de l'utilisateur), qui peut alors appeler les outils nécessaires
+    pour l'accomplir. Exécuté avec interactive=False, voir `_execute_tool_call`.
+    Faire `.set()` sur l'Event renvoyé arrête le thread proprement.
     """
     stop_event = threading.Event()
 
@@ -273,7 +230,7 @@ def _is_exit(user_text: str) -> bool:
 
 
 def run_monika() -> None:
-    """Lance Monika en mode texte dans le terminal (pratique pour déboguer sans micro)."""
+    """Lance Monika en mode texte dans le terminal."""
     print("🤖 Monika Initialisée. Comment puis-je vous aider ?")
     stop_reminders = _start_reminder_watcher(lambda text: print(f"\n🔔 Monika: {text}"))
     stop_scheduler = _start_scheduler_watcher(lambda text: print(f"\n🗓️ Monika: {text}"))
@@ -293,9 +250,7 @@ def run_monika_voice() -> None:
     print("Monika (mode vocal) initialisée.")
     speak("Bonjour, je t'écoute.")
 
-    # Les watchers de rappels et de tâches planifiées tournent dans des threads
-    # séparés et peuvent vouloir parler en même temps que la boucle principale :
-    # un verrou évite que plusieurs audios se chevauchent sur les haut-parleurs.
+    # Évite que la réponse principale et un rappel/tâche planifiée parlent en même temps.
     speech_lock = threading.Lock()
 
     def _safe_speak(text: str) -> None:

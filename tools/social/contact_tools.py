@@ -1,6 +1,6 @@
 """
-tools/contact_tools.py
------------------------
+tools/social/contact_tools.py
+------------------------------
 Gestionnaire de carnet d'adresses pour Monika.
 """
 
@@ -76,13 +76,12 @@ def manage_contacts(action: str, name: str = "", phone_number: str = "") -> str:
 
 
 def get_phone_by_name(name: str) -> str:
-    """Fonction helper pour récupérer un numéro à partir d'un nom."""
+    """Récupère un numéro à partir d'un nom, avec correspondance partielle en repli."""
     contacts = _load_contacts()
     clean_name = name.strip().lower()
     if clean_name in contacts:
         return contacts[clean_name]["phone"]
 
-    # Recherche partielle (ex: 'adam' dans 'adam smith')
     for key, data in contacts.items():
         if clean_name in key:
             return data["phone"]

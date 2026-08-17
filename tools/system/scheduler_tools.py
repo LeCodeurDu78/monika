@@ -5,22 +5,16 @@ Planification de tâches en arrière-plan pour Monika — l'équivalent d'un cro
 personnel.
 
 Différence avec reminder_tools.py : un rappel se contente d'ANNONCER un
-message ("rappelle-moi de..."). Une tâche planifiée ici déclenche une
-EXÉCUTION AUTONOME par l'agent lui-même : l'instruction est envoyée au
-modèle, qui peut alors appeler n'importe quel autre outil (météo, e-mails,
-recherche web, mémoire...) pour l'accomplir, sans intervention de
-l'utilisateur.
+message, tandis qu'une tâche planifiée ici déclenche une EXÉCUTION AUTONOME
+par l'agent (l'instruction est envoyée au modèle, qui peut appeler n'importe
+quel outil pour l'accomplir).
 
-Trois types de récurrence :
-- 'once'     : une seule fois, à une date/heure précise ('run_at').
-- 'daily'    : tous les jours à la même heure ('time_of_day', format 'HH:MM').
-- 'interval' : en boucle toutes les N secondes ('interval_seconds').
+Trois types de récurrence : 'once' (date/heure précise via 'run_at'), 'daily'
+('time_of_day', format 'HH:MM'), 'interval' (boucle toutes les N secondes).
 
-Ce module gère uniquement le stockage (CRUD) des tâches planifiées.
-L'exécution réelle (appel du modèle + des outils) est déclenchée par le
-thread de fond démarré dans agent.py (`_start_scheduler_watcher`), qui est
-seul à connaître `process_user_message` — cela évite tout import circulaire
-et garde ce module simple à tester isolément.
+Ce module ne gère que le stockage (CRUD) des tâches. L'exécution réelle est
+déclenchée par le thread de fond de agent.py (`_start_scheduler_watcher`),
+seul à connaître `process_user_message` — ça évite un import circulaire.
 """
 
 import os
@@ -168,11 +162,11 @@ def scheduler_control(
 
 
 def pop_due_tasks() -> list[tuple[int, str]]:
-    """Récupère les tâches actives arrivées à échéance et avance leur prochaine
-    exécution ('daily'/'interval') ou les désactive ('once').
+    """Récupère les tâches actives arrivées à échéance et avance leur
+    prochaine exécution ('daily'/'interval') ou les désactive ('once').
 
-    Usage interne uniquement : appelé par le thread de fond de agent.py, jamais
-    exposé au modèle via function calling (contrairement à 'add'/'list'/'cancel').
+    Usage interne : appelé par le thread de fond de agent.py, jamais exposé
+    au modèle via function calling.
     """
     _init_db()
     due: list[tuple[int, str]] = []

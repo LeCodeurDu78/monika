@@ -1,20 +1,25 @@
+"""
+tools/system/terminal_tools.py
+-------------------------------
+Exécution de commandes Bash locales pour Monika.
+"""
+
 import os
 import subprocess
 
-# Liste des commandes strictement interdites pour éviter des accidents destructeurs
+# Commandes strictement interdites pour éviter des accidents destructeurs
 FORBIDDEN_COMMANDS = ["rm -rf /", "mkfs", "dd ", ":(){ :|:& };:"]
 
 
 def run_script(command: str, workdir: str = "/home/adam") -> str:
-    """
-    Exécute un script ou une commande Bash sur le système de manière sécurisée.
+    """Exécute une commande Bash sur le système, avec un garde-fou sur les
+    commandes destructrices et un timeout de sécurité (30s).
 
     Args:
         command: La commande Bash à exécuter.
-        workdir: Le répertoire de travail dans lequel exécuter la commande (par défaut /home/adam).
+        workdir: Le répertoire de travail (par défaut /home/adam).
     """
     try:
-        # Vérification des commandes destructrices
         for forbidden in FORBIDDEN_COMMANDS:
             if forbidden in command:
                 return f"⚠️ Action bloquée : La commande contient un modèle dangereux ('{forbidden}')."
@@ -23,7 +28,6 @@ def run_script(command: str, workdir: str = "/home/adam") -> str:
         if not os.path.exists(workdir):
             return f"Erreur : Le répertoire de travail '{workdir}' n'existe pas."
 
-        # Exécution de la commande avec un timeout de sécurité (30s)
         result = subprocess.run(
             command,
             shell=True,

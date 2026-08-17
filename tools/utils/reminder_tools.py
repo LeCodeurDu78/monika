@@ -1,20 +1,14 @@
 """
 tools/utils/reminder_tools.py
 ------------------------------
-Gestion des rappels/tâches avec échéance pour Monika, stockés en SQLite.
+Rappels avec échéance pour Monika, stockés en SQLite.
 
-Trois usages :
-1. Le modèle peut créer, lister ou supprimer des rappels via function calling
-   (actions 'add', 'list', 'delete').
-2. Le modèle peut aussi vérifier explicitement s'il y a des rappels en
-   attente (action 'due'), par exemple si l'utilisateur demande
-   "j'ai des rappels ?".
-3. agent.py utilise la même action 'due' en tâche de fond (voir
-   `_start_reminder_watcher`) pour annoncer proactivement un rappel dès son
-   échéance, sans que l'utilisateur ait à demander quoi que ce soit.
-
-Un rappel n'est annoncé (via 'due') qu'une seule fois : dès qu'il est
-renvoyé par 'due', il est marqué 'notified' pour ne pas être répété en boucle.
+Le modèle crée/liste/supprime des rappels via function calling ('add', 'list',
+'delete'), et peut aussi vérifier explicitement ceux en attente ('due'). Cette
+même action 'due' est utilisée par agent.py en tâche de fond (voir
+`_start_reminder_watcher`) pour annoncer un rappel dès son échéance sans que
+l'utilisateur ait à demander. Un rappel n'est annoncé qu'une seule fois : dès
+qu'il est renvoyé par 'due', il est marqué 'notified'.
 """
 
 import os
@@ -25,7 +19,6 @@ DB_PATH = os.path.expanduser("~/.config/monika/reminders.db")
 
 
 def _init_db() -> None:
-    """Initialise la table des rappels si elle n'existe pas."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""

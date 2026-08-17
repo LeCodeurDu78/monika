@@ -1,7 +1,7 @@
 """
 main.py
 --------
-Point d'entrée du programme Monika.
+Point d'entrée de Monika.
 """
 
 from agent import run_monika, run_monika_voice

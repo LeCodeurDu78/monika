@@ -1,20 +1,13 @@
 """
 tools/registry.py
 ------------------
-Registre unique des outils de Monika.
+Registre unique des outils de Monika : chaque outil est décrit une seule fois
+(fonction Python exécutable + schéma JSON), sous forme de deux vues d'un même
+registre : `AVAILABLE_TOOLS` (nom -> fonction) et `TOOLS_SCHEMA` (function
+calling).
 
-Avant : les outils étaient déclarés à deux endroits différents (la fonction
-Python dans registry.py, son schéma JSON dans schemas.py), avec un import
-qui déclenchait des effets de bord entre les deux fichiers. Les deux listes
-pouvaient diverger silencieusement (un outil renommé ou supprimé d'un côté,
-oublié de l'autre).
-
-Maintenant : chaque outil est décrit une seule fois, ici, sous la forme
-(fonction Python exécutable, schéma JSON décrit au modèle). `AVAILABLE_TOOLS`
-et `TOOLS_SCHEMA` sont deux vues issues de ce même registre.
-
-Les outils "custom" créés à la volée par Monika (via create_custom_tool) sont
-chargés dynamiquement depuis tools/custom/ et injectés dans les deux mêmes
+Les outils "custom" créés à la volée par Monika (create_custom_tool) sont
+chargés dynamiquement depuis tools/custom/ et injectés dans ces deux
 structures par `sync_custom_tools`.
 """
 
@@ -59,7 +52,6 @@ def _schema(name: str, description: str, properties: dict, required: list | None
     }
 
 
-# Registre de base : nom de l'outil -> fonction Python exécutable.
 AVAILABLE_TOOLS = {
     "open_application": open_application,
     "get_weather": get_weather,
@@ -83,7 +75,6 @@ AVAILABLE_TOOLS = {
     "scheduler_control": scheduler_control,
 }
 
-# Schémas fournis au modèle pour le function calling, un par outil de base.
 TOOLS_SCHEMA = [
     _schema(
         "open_application",
@@ -121,9 +112,7 @@ TOOLS_SCHEMA = [
                 "description": "Pourcentage de variation du volume. Utilisé uniquement pour volume_up/volume_down.",
             },
         },
-        # NB: 'value' n'est requis que pour le volume (la fonction a un défaut de 5 pour
-        # les autres actions) — le rendre obligatoire pour toutes les actions forçait le
-        # modèle à inventer une valeur même pour 'screenshot' ou 'media_toggle'.
+        # 'value' n'est pas requis : seul volume_up/volume_down l'utilise (défaut 5 sinon).
         ["action"],
     ),
     _schema(
@@ -316,10 +305,8 @@ TOOLS_SCHEMA = [
 
 
 def _generate_schema_from_func(func, name: str, description: str) -> dict:
-    """Génère automatiquement un schéma JSON à partir de la signature d'une fonction.
-
-    Utilisé uniquement pour les outils "custom" écrits sans schéma explicite.
-    """
+    """Génère un schéma JSON à partir de la signature d'une fonction (utilisé
+    pour les outils custom, qui n'ont pas de schéma explicite)."""
     sig = inspect.signature(func)
     type_map = {int: "integer", float: "number", bool: "boolean"}
     properties = {}
@@ -337,9 +324,8 @@ def _generate_schema_from_func(func, name: str, description: str) -> dict:
 
 
 def sync_custom_tools(target_schema_list: list) -> None:
-    """Parcourt le dossier tools/custom/, charge les fonctions Python dans AVAILABLE_TOOLS
-    et injecte leurs schémas JSON dans `target_schema_list`.
-    """
+    """Charge les outils custom de tools/custom/ dans AVAILABLE_TOOLS et
+    ajoute leur schéma JSON à `target_schema_list`."""
     custom_dir = os.path.join(os.path.dirname(__file__), "custom")
     if not os.path.exists(custom_dir):
         return
@@ -364,10 +350,8 @@ def sync_custom_tools(target_schema_list: list) -> None:
             if func is None:
                 continue
 
-            # 1. Enregistrement de l'exécutable
             AVAILABLE_TOOLS[tool_name] = func
 
-            # 2. Ajout au schéma si pas encore présent
             if not any(s["function"]["name"] == tool_name for s in target_schema_list):
                 doc = (func.__doc__ or f"Outil personnalisé {tool_name}").strip()
                 target_schema_list.append(_generate_schema_from_func(func, tool_name, doc))

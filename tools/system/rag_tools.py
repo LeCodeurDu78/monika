@@ -1,25 +1,18 @@
 """
-tools/utils/rag_tools.py
+tools/system/rag_tools.py
 --------------------------
 RAG (Retrieval-Augmented Generation) sur les documents personnels de
 l'utilisateur.
 
-Principe : l'utilisateur indexe un ou plusieurs fichiers/dossiers (PDF,
-Word, texte, markdown...) via l'action 'ingest'. Chaque document est
-découpé en "chunks" (morceaux de texte) qui sont vectorisés localement
-avec BGE-M3 (voir tools/memory.py, qui héberge le backend d'embeddings
-partagé) et stockés dans une
-base SQLite dédiée.
+L'utilisateur indexe un ou plusieurs fichiers/dossiers (PDF, Word, texte,
+markdown...) via l'action 'ingest' : chaque document est découpé en chunks,
+vectorisés localement avec BGE-M3 (backend partagé, voir tools/memory.py) et
+stockés dans une base SQLite dédiée. L'action 'search' vectorise la question
+et renvoie les chunks les plus proches, avec repli sur une recherche par
+mot-clé si les embeddings sont indisponibles.
 
-Quand l'utilisateur pose une question sur ses documents, l'action 'search'
-vectorise la question et renvoie les chunks les plus proches sémantiquement,
-que le modèle peut ensuite utiliser pour répondre en citant ses sources.
-
-Robustesse : comme pour tools/memory.py, si le modèle d'embeddings local
-est indisponible, on retombe automatiquement sur une recherche par mot-clé
-(LIKE) plutôt que de faire échouer l'outil. Les dépendances d'extraction
-(pypdf, python-docx) sont optionnelles : leur absence ne casse pas les
-autres formats, un message clair indique juste comment les installer.
+Les dépendances d'extraction (pypdf, python-docx) sont optionnelles : leur
+absence ne casse pas les autres formats.
 """
 
 import os
@@ -28,32 +21,34 @@ from typing import Optional
 
 import numpy as np
 
-from tools.memory import embed_text, embed_texts, embedding_dimension
+from tools.memory import (
+    embed_text,
+    embed_texts,
+    embedding_dimension,
+    embedding_to_blob,
+    blob_to_embedding,
+    cosine_similarity,
+)
 
 DB_PATH = os.path.expanduser("~/.config/monika/rag.db")
 
-# Formats de documents pris en charge nativement (texte brut) ou via une
-# librairie d'extraction optionnelle (pdf, docx).
+# Formats pris en charge nativement (texte brut) ou via une librairie optionnelle (pdf, docx)
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".py", ".log"}
 PDF_EXTENSIONS = {".pdf"}
 DOCX_EXTENSIONS = {".docx"}
 SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | PDF_EXTENSIONS | DOCX_EXTENSIONS
 
-# Découpage des documents en chunks (en caractères), avec chevauchement pour
-# ne pas couper une idée exactement à la frontière entre deux chunks.
+# Découpage en chunks (en caractères), avec chevauchement pour ne pas couper une idée à la frontière
 CHUNK_SIZE = 900
 CHUNK_OVERLAP = 150
 
-# Nombre max de chunks renvoyés par recherche, et seuil de similarité
-# cosinus en dessous duquel un résultat est jugé trop peu pertinent.
+# Nombre max de chunks renvoyés, et seuil de similarité cosinus minimal
 RAG_TOP_K = 5
 RAG_MIN_SIMILARITY = 0.35
 
-# Nombre max de chunks "rattrapés" (backfill d'embeddings) par recherche,
-# pour les chunks indexés pendant une panne du serveur d'embeddings.
+# Nombre max de chunks revectorisés (backfill) par recherche
 BACKFILL_BATCH_SIZE = 25
 
-# Dossiers à ignorer lors d'une indexation récursive.
 _IGNORED_DIR_NAMES = {"__pycache__", ".git", "node_modules", ".venv", "venv"}
 
 
@@ -78,42 +73,13 @@ def _init_db() -> None:
         conn.commit()
 
 
-# --------------------------------------------------------------------------
-# Embeddings (même logique que tools/memory.py)
-# --------------------------------------------------------------------------
-
-def _get_embedding(text: str) -> Optional[np.ndarray]:
-    """Calcule le vecteur d'embedding d'un texte avec le modèle local BGE-M3."""
-    return embed_text(text)
-
-
-def _embedding_to_blob(vector: np.ndarray) -> bytes:
-    return vector.astype(np.float32).tobytes()
-
-
-def _blob_to_embedding(blob: bytes) -> np.ndarray:
-    return np.frombuffer(blob, dtype=np.float32)
-
-
-def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    if a.shape != b.shape:
-        return -1.0
-    denom = np.linalg.norm(a) * np.linalg.norm(b)
-    if denom == 0:
-        return 0.0
-    return float(np.dot(a, b) / denom)
-
-
 def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
-    """Calcule l'embedding des chunks qui n'en ont pas encore, et revectorise
-    aussi ceux dont le vecteur stocké a une dimension différente du modèle
-    actuel (migration automatique après un changement de backend d'embeddings,
-    par ex. passage à BGE-M3)."""
+    """Vectorise les chunks sans embedding, et revectorise ceux dont la
+    dimension stockée ne correspond plus au modèle actuel."""
     cursor = conn.cursor()
     current_dim = embedding_dimension()
 
     if current_dim is not None:
-        # length(embedding) est en octets ; un float32 = 4 octets.
         cursor.execute(
             "SELECT id, content FROM rag_chunks WHERE embedding IS NULL OR length(embedding) != ? LIMIT ?",
             (current_dim * 4, BACKFILL_BATCH_SIZE),
@@ -129,10 +95,10 @@ def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
         return
 
     for row_id, content in rows:
-        vector = _get_embedding(content)
+        vector = embed_text(content)
         if vector is None:
-            break  # modèle d'embeddings indisponible, inutile d'insister
-        cursor.execute("UPDATE rag_chunks SET embedding = ? WHERE id = ?", (_embedding_to_blob(vector), row_id))
+            break
+        cursor.execute("UPDATE rag_chunks SET embedding = ? WHERE id = ?", (embedding_to_blob(vector), row_id))
     conn.commit()
 
 
@@ -141,7 +107,7 @@ def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
 # --------------------------------------------------------------------------
 
 def _extract_text(file_path: str) -> tuple[Optional[str], Optional[str]]:
-    """Extrait le texte brut d'un fichier. Renvoie (texte, erreur) : un des
+    """Extrait le texte brut d'un fichier. Renvoie (texte, erreur) : l'un des
     deux est toujours None."""
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -179,8 +145,7 @@ def _extract_text(file_path: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def _iter_supported_files(path: str):
-    """Génère les chemins de fichiers indexables sous `path` (fichier unique
-    ou dossier parcouru récursivement)."""
+    """Génère les chemins de fichiers indexables sous `path` (fichier unique ou dossier récursif)."""
     if os.path.isfile(path):
         if os.path.splitext(path)[1].lower() in SUPPORTED_EXTENSIONS:
             yield path
@@ -195,7 +160,7 @@ def _iter_supported_files(path: str):
 
 def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
     """Découpe un texte en morceaux d'environ `chunk_size` caractères, en
-    essayant de couper sur un espace plutôt qu'en plein milieu d'un mot."""
+    coupant sur un espace plutôt qu'en plein milieu d'un mot."""
     text = text.strip()
     if not text:
         return []
@@ -216,7 +181,7 @@ def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OV
             chunks.append(piece)
 
         if end >= length:
-            break  # fin du texte atteinte, pas besoin d'un chunk de chevauchement supplémentaire
+            break
 
         next_start = end - overlap
         start = next_start if next_start > start else end
@@ -244,7 +209,7 @@ def _semantic_search(conn: sqlite3.Connection, query_embedding: np.ndarray) -> l
 
     scored = []
     for source, chunk_index, content, blob in cursor.fetchall():
-        similarity = _cosine_similarity(query_embedding, _blob_to_embedding(blob))
+        similarity = cosine_similarity(query_embedding, blob_to_embedding(blob))
         if similarity >= RAG_MIN_SIMILARITY:
             scored.append((source, chunk_index, content, similarity))
 
@@ -257,19 +222,17 @@ def _semantic_search(conn: sqlite3.Connection, query_embedding: np.ndarray) -> l
 # --------------------------------------------------------------------------
 
 def rag_control(action: str, path: str = "", query: str = "", doc_name: str = "") -> str:
-    """Gère la base de connaissances RAG (Retrieval-Augmented Generation) sur
-    les documents personnels de l'utilisateur.
+    """Gère la base de connaissances RAG sur les documents personnels de l'utilisateur.
 
     Actions disponibles :
-    - 'ingest' : Indexe un fichier ou tout un dossier (requiert 'path'). Formats
-                 pris en charge : .txt, .md, .csv, .json, .py, .pdf, .docx.
-                 Réindexer un fichier déjà indexé remplace son contenu précédent.
-    - 'search' : Cherche par sens (sémantique) les passages de documents les
-                 plus pertinents pour répondre à 'query', avec repli automatique
-                 sur la recherche par mot-clé si les embeddings sont indisponibles.
-    - 'list'   : Liste les documents actuellement indexés et leur nombre de chunks.
-    - 'delete' : Supprime un document de l'index (requiert 'doc_name', le chemin
-                 exact tel qu'affiché par 'list').
+    - 'ingest' : Indexe un fichier ou un dossier (requiert 'path'). Formats :
+                 .txt, .md, .csv, .json, .py, .pdf, .docx. Réindexer un fichier
+                 déjà indexé remplace son contenu précédent.
+    - 'search' : Cherche par sens les passages pertinents pour 'query', avec
+                 repli sur la recherche par mot-clé si besoin.
+    - 'list'   : Liste les documents indexés et leur nombre de chunks.
+    - 'delete' : Supprime un document de l'index (requiert 'doc_name', le
+                 chemin exact tel qu'affiché par 'list').
     """
     _init_db()
 
@@ -304,15 +267,13 @@ def rag_control(action: str, path: str = "", query: str = "", doc_name: str = ""
                         skipped.append(f"{file_path} (aucun texte extractible)")
                         continue
 
-                    # Réindexation : on remplace les anciens chunks de cette source.
-                    cursor.execute("DELETE FROM rag_chunks WHERE source = ?", (file_path,))
+                    cursor.execute("DELETE FROM rag_chunks WHERE source = ?", (file_path,))  # réindexation : on remplace les anciens chunks
 
-                    # Vectorisation par lot (bien plus rapide que chunk par chunk).
-                    vectors = embed_texts(chunks)
+                    vectors = embed_texts(chunks)  # vectorisation par lot, plus rapide que chunk par chunk
 
                     for i, chunk in enumerate(chunks):
                         if vectors is not None and i < len(vectors):
-                            embedding_blob = _embedding_to_blob(np.asarray(vectors[i], dtype=np.float32))
+                            embedding_blob = embedding_to_blob(np.asarray(vectors[i], dtype=np.float32))
                         else:
                             embedding_blob = None
                         cursor.execute(
@@ -337,7 +298,7 @@ def rag_control(action: str, path: str = "", query: str = "", doc_name: str = ""
 
                 _backfill_missing_embeddings(conn)
 
-                query_embedding = _get_embedding(query)
+                query_embedding = embed_text(query)
                 if query_embedding is not None:
                     semantic_results = _semantic_search(conn, query_embedding)
                     if semantic_results:
@@ -347,7 +308,6 @@ def rag_control(action: str, path: str = "", query: str = "", doc_name: str = ""
                         ]
                         return "🔎 Passages pertinents trouvés dans tes documents :\n\n" + "\n\n".join(lines)
 
-                # Repli : pas d'embeddings disponibles, ou aucun résultat assez pertinent.
                 keyword_results = _keyword_search(conn, query)
                 if not keyword_results:
                     return f"Aucun passage pertinent trouvé pour '{query}' dans les documents indexés."

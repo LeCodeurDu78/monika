@@ -1,7 +1,7 @@
 """
 tools/spotify_tools.py
 ----------------------
-Contrôle Spotify robuste : Fallback automatique playerctl si compte non-Premium.
+Contrôle Spotify robuste via playerctl
 """
 
 import subprocess
@@ -18,13 +18,7 @@ def _run_playerctl(args: list) -> tuple[bool, str]:
 
 
 def spotify_control(action: str, query: str = "", volume: int = 50) -> str:
-    """Contrôle la lecture de musique Spotify (compatible Spotify Premium et Gratuit via playerctl).
-
-    Args:
-        action: 'play', 'pause', 'next', 'previous', 'rewind', 'current', 'volume'
-        query: Nom de chanson ou recherche (pour action='play')
-        volume: Niveau de volume 0-100 (pour action='volume')
-    """
+    """Contrôle la lecture de musique Spotify (compatible Spotify Premium et Gratuit via playerctl)."""
     # 1. Action Pause
     if action == "pause":
         success, _ = _run_playerctl(["pause"])
@@ -44,7 +38,6 @@ def spotify_control(action: str, query: str = "", volume: int = 50) -> str:
         # Tentative via position 0
         ok_pos, _ = _run_playerctl(["position", "0"])
 
-        # Si position 0 n'est pas géré par le lecteur, on envoie 'previous' (qui remet au début du morceau)
         if not ok_pos:
             _run_playerctl(["previous"])
 
