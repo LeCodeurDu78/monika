@@ -29,13 +29,11 @@ MODEL_NAME = "gpt-oss-120b"
 # Modèle utilisé pour la vision
 VISION_MODEL_NAME = "gemini-3-flash-preview"
 
-# Modèle utilisé pour vectoriser la mémoire long-terme (recherche sémantique).
+# Modèle utilisé pour vectoriser la mémoire
 EMBEDDING_MODEL_NAME = "gemini-embedding-001"
 
 # Configuration de Wikipédia en français
 wikipedia.set_lang("fr")
-
-REMINDER_CHECK_INTERVAL_SECONDS=5
 
 # Prompt système par défaut de l'agent
 SYSTEM_PROMPT = (
@@ -80,3 +78,9 @@ MAX_RECORD_SECONDS = float(os.getenv("VOICE_MAX_RECORD_SECONDS", "20"))
 
 # Mots qui terminent la session en plus de Ctrl+C (comparaison en minuscules, sous-chaîne)
 EXIT_WORDS = ("stop", "au revoir", "quitte la session", "quitte monika")
+
+# --- Rappels ---
+REMINDER_CHECK_INTERVAL_SECONDS = 60
+
+# --- Planification de tâches (scheduler_control) ---
+SCHEDULER_CHECK_INTERVAL_SECONDS = 30

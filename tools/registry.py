@@ -39,6 +39,7 @@ from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.reminder_tools import reminder_control
+from tools.system.scheduler_tools import scheduler_control
 
 
 def _schema(name: str, description: str, properties: dict, required: list | None = None) -> dict:
@@ -77,6 +78,7 @@ AVAILABLE_TOOLS = {
     "send_whatsapp_message": send_whatsapp_message,
     "manage_contacts": manage_contacts,
     "reminder_control": reminder_control,
+    "scheduler_control": scheduler_control,
 }
 
 # Schémas fournis au modèle pour le function calling, un par outil de base.
@@ -268,6 +270,28 @@ TOOLS_SCHEMA = [
             "due_at": {"type": "string", "description": "Date et heure d'échéance au format ISO (ex: '2026-08-20T09:00:00'), requis pour action='add'."},
             "reminder_id": {"type": "integer", "description": "Identifiant du rappel à supprimer (requis pour action='delete', voir la liste via action='list')."},
             "limit": {"type": "integer", "description": "Nombre de rappels à afficher pour action='list' (par défaut 10)."},
+        },
+        ["action"],
+    ),
+    _schema(
+        "scheduler_control",
+        "Planifie l'exécution AUTONOME d'une instruction par Monika elle-même : contrairement à reminder_control qui se contente d'annoncer un message, ici Monika appelle réellement les outils nécessaires (météo, e-mails, recherche web...) pour accomplir la tâche, sans intervention de l'utilisateur. Une seule fois, tous les jours, ou en boucle à intervalle régulier.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["add", "list", "cancel"],
+                "description": "'add' pour planifier une tâche, 'list' pour voir les tâches actives, 'cancel' pour en annuler une.",
+            },
+            "instruction": {"type": "string", "description": "Ce que Monika doit faire, en langage naturel (ex: 'donne la météo de Paris', 'vérifie mes derniers e-mails'). Requis pour action='add'."},
+            "schedule_type": {
+                "type": "string",
+                "enum": ["once", "daily", "interval"],
+                "description": "'once' pour une seule fois (avec 'run_at'), 'daily' pour tous les jours (avec 'time_of_day'), 'interval' pour une boucle récurrente (avec 'interval_seconds'). Requis pour action='add'.",
+            },
+            "run_at": {"type": "string", "description": "Date et heure ISO du déclenchement unique (ex: '2026-08-20T09:00:00'), requis si schedule_type='once'."},
+            "time_of_day": {"type": "string", "description": "Heure quotidienne de déclenchement au format 'HH:MM' (ex: '08:00'), requis si schedule_type='daily'."},
+            "interval_seconds": {"type": "integer", "description": "Période de répétition en secondes (ex: 3600 pour toutes les heures), requis si schedule_type='interval'."},
+            "task_id": {"type": "integer", "description": "Identifiant de la tâche à annuler (requis pour action='cancel', voir action='list')."},
         },
         ["action"],
     ),
