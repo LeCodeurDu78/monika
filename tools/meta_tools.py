@@ -23,8 +23,7 @@ def create_custom_tool(tool_name: str, python_code: str, description: str) -> st
         python_code: Code Python complet contenant la fonction avec le même nom que tool_name.
         description: Description claire de ce que fait l'outil.
     """
-    from tools.schemas import TOOLS_SCHEMA
-    from tools.registry import sync_custom_tools
+    from tools.registry import TOOLS_SCHEMA, sync_custom_tools
 
     try:
         # 1. Validation syntaxique

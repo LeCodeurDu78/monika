@@ -1,5 +1,6 @@
 import os
 import subprocess
+from datetime import datetime
 
 CODE_BASE_DIR = "/home/adam/Documents/Code"
 OBSIDIAN_BASE_DIR = "/home/adam/Documents/Obsidian"  # Modifiez le chemin vers vos Vaults Obsidian si besoin
@@ -50,7 +51,7 @@ def create_full_project(project_name: str, private: bool = True) -> str:
         vault_note = os.path.join(obsidian_path, f"{clean_name}-Notes.md")
         with open(vault_note, "w", encoding="utf-8") as f:
             f.write(
-                f"# Notes de projet : {project_name}\n\n- **Chemin du code** : `{project_path}`\n- **Date de création** : {os.popen('date').read().strip()}\n\n## Idées & Todos\n- [ ] ")
+                f"# Notes de projet : {project_name}\n\n- **Chemin du code** : `{project_path}`\n- **Date de création** : {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n## Idées & Todos\n- [ ] ")
 
         results.append(f"📓 Vault Obsidian initialisé : `{obsidian_path}`")
 
