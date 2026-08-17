@@ -27,11 +27,12 @@ from tools.system.system_tools import open_application, system_control, get_syst
 from tools.utils.weather_tools import get_weather
 from tools.system.file_tools import manage_files
 from tools.social.email_tools import email_control
-from tools.system.search_tools import web_search
+from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
 from tools.memory import memory_control
+from tools.system.rag_tools import rag_control
 from tools.system.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool
 from tools.utils.joke_tools import get_joke
@@ -71,6 +72,7 @@ AVAILABLE_TOOLS = {
     "create_full_project": create_full_project,
     "run_script": run_script,
     "memory_control": memory_control,
+    "rag_control": rag_control,
     "analyze_image": analyze_image,
     "create_custom_tool": create_custom_tool,
     "get_joke": get_joke,
@@ -193,6 +195,21 @@ TOOLS_SCHEMA = [
             "key": {"type": "string", "description": "Pour 'save' : clé d'identification (ex: 'editeur_prefere'). Pour 'search' : le texte de la requête (ex: 'éditeur de code')."},
             "value": {"type": "string", "description": "L'information exacte à retenir (requise si action='save')."},
             "category": {"type": "string", "description": "Catégorie facultative (ex: 'preferences', 'projets', 'regles')."},
+        },
+        ["action"],
+    ),
+    _schema(
+        "rag_control",
+        "RAG (Retrieval-Augmented Generation) sur les documents personnels de l'utilisateur : indexe des fichiers (PDF, Word, texte, markdown...) puis retrouve par sens les passages pertinents pour répondre à une question, avec la source exacte. Utilise cet outil dès que l'utilisateur pose une question sur le contenu d'un de ses fichiers/documents déjà indexés, ou demande d'indexer/ajouter un document à sa base de connaissances.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["ingest", "search", "list", "delete"],
+                "description": "'ingest' pour indexer un fichier ou un dossier, 'search' pour interroger les documents indexés, 'list' pour voir les documents indexés, 'delete' pour en retirer un.",
+            },
+            "path": {"type": "string", "description": "Chemin du fichier ou dossier à indexer (requis pour action='ingest'). Formats acceptés : .txt, .md, .csv, .json, .py, .pdf, .docx."},
+            "query": {"type": "string", "description": "La question ou les termes de recherche (requis pour action='search')."},
+            "doc_name": {"type": "string", "description": "Chemin exact du document à retirer de l'index, tel qu'affiché par action='list' (requis pour action='delete')."},
         },
         ["action"],
     ),

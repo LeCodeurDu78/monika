@@ -29,8 +29,9 @@ MODEL_NAME = "gpt-oss-120b"
 # Modèle utilisé pour la vision
 VISION_MODEL_NAME = "gemini-3-flash-preview"
 
-# Modèle utilisé pour vectoriser la mémoire
-EMBEDDING_MODEL_NAME = "gemini-embedding-001"
+# --- Embeddings locaux (mémoire + RAG) ---
+LOCAL_EMBEDDING_MODEL_NAME = "BAAI/bge-m3"
+LOCAL_EMBEDDING_DEVICE = "cuda"
 
 # Configuration de Wikipédia en français
 wikipedia.set_lang("fr")
