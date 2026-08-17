@@ -27,11 +27,12 @@ from tools.system.system_tools import open_application, system_control, get_syst
 from tools.utils.weather_tools import get_weather
 from tools.system.file_tools import manage_files
 from tools.social.email_tools import email_control
-from tools.system.search_tools import web_search
+from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
 from tools.memory import memory_control
+from tools.system.rag_tools import rag_control
 from tools.system.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool
 from tools.utils.joke_tools import get_joke
@@ -39,6 +40,7 @@ from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.reminder_tools import reminder_control
+from tools.system.scheduler_tools import scheduler_control
 
 
 def _schema(name: str, description: str, properties: dict, required: list | None = None) -> dict:
@@ -70,6 +72,7 @@ AVAILABLE_TOOLS = {
     "create_full_project": create_full_project,
     "run_script": run_script,
     "memory_control": memory_control,
+    "rag_control": rag_control,
     "analyze_image": analyze_image,
     "create_custom_tool": create_custom_tool,
     "get_joke": get_joke,
@@ -77,6 +80,7 @@ AVAILABLE_TOOLS = {
     "send_whatsapp_message": send_whatsapp_message,
     "manage_contacts": manage_contacts,
     "reminder_control": reminder_control,
+    "scheduler_control": scheduler_control,
 }
 
 # Schémas fournis au modèle pour le function calling, un par outil de base.
@@ -195,6 +199,21 @@ TOOLS_SCHEMA = [
         ["action"],
     ),
     _schema(
+        "rag_control",
+        "RAG (Retrieval-Augmented Generation) sur les documents personnels de l'utilisateur : indexe des fichiers (PDF, Word, texte, markdown...) puis retrouve par sens les passages pertinents pour répondre à une question, avec la source exacte. Utilise cet outil dès que l'utilisateur pose une question sur le contenu d'un de ses fichiers/documents déjà indexés, ou demande d'indexer/ajouter un document à sa base de connaissances.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["ingest", "search", "list", "delete"],
+                "description": "'ingest' pour indexer un fichier ou un dossier, 'search' pour interroger les documents indexés, 'list' pour voir les documents indexés, 'delete' pour en retirer un.",
+            },
+            "path": {"type": "string", "description": "Chemin du fichier ou dossier à indexer (requis pour action='ingest'). Formats acceptés : .txt, .md, .csv, .json, .py, .pdf, .docx."},
+            "query": {"type": "string", "description": "La question ou les termes de recherche (requis pour action='search')."},
+            "doc_name": {"type": "string", "description": "Chemin exact du document à retirer de l'index, tel qu'affiché par action='list' (requis pour action='delete')."},
+        },
+        ["action"],
+    ),
+    _schema(
         "analyze_image",
         "Analyse visuellement une image locale ou une capture d'écran (extraire du texte, lire des erreurs, décrire un schéma, identifier des éléments à l'écran).",
         {
@@ -268,6 +287,28 @@ TOOLS_SCHEMA = [
             "due_at": {"type": "string", "description": "Date et heure d'échéance au format ISO (ex: '2026-08-20T09:00:00'), requis pour action='add'."},
             "reminder_id": {"type": "integer", "description": "Identifiant du rappel à supprimer (requis pour action='delete', voir la liste via action='list')."},
             "limit": {"type": "integer", "description": "Nombre de rappels à afficher pour action='list' (par défaut 10)."},
+        },
+        ["action"],
+    ),
+    _schema(
+        "scheduler_control",
+        "Planifie l'exécution AUTONOME d'une instruction par Monika elle-même : contrairement à reminder_control qui se contente d'annoncer un message, ici Monika appelle réellement les outils nécessaires (météo, e-mails, recherche web...) pour accomplir la tâche, sans intervention de l'utilisateur. Une seule fois, tous les jours, ou en boucle à intervalle régulier.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["add", "list", "cancel"],
+                "description": "'add' pour planifier une tâche, 'list' pour voir les tâches actives, 'cancel' pour en annuler une.",
+            },
+            "instruction": {"type": "string", "description": "Ce que Monika doit faire, en langage naturel (ex: 'donne la météo de Paris', 'vérifie mes derniers e-mails'). Requis pour action='add'."},
+            "schedule_type": {
+                "type": "string",
+                "enum": ["once", "daily", "interval"],
+                "description": "'once' pour une seule fois (avec 'run_at'), 'daily' pour tous les jours (avec 'time_of_day'), 'interval' pour une boucle récurrente (avec 'interval_seconds'). Requis pour action='add'.",
+            },
+            "run_at": {"type": "string", "description": "Date et heure ISO du déclenchement unique (ex: '2026-08-20T09:00:00'), requis si schedule_type='once'."},
+            "time_of_day": {"type": "string", "description": "Heure quotidienne de déclenchement au format 'HH:MM' (ex: '08:00'), requis si schedule_type='daily'."},
+            "interval_seconds": {"type": "integer", "description": "Période de répétition en secondes (ex: 3600 pour toutes les heures), requis si schedule_type='interval'."},
+            "task_id": {"type": "integer", "description": "Identifiant de la tâche à annuler (requis pour action='cancel', voir action='list')."},
         },
         ["action"],
     ),
