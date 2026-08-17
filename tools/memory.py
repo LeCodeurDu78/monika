@@ -19,9 +19,9 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-from config import LOCAL_EMBEDDING_MODEL_NAME, LOCAL_EMBEDDING_DEVICE
+from config import APP_DIR, LOCAL_EMBEDDING_MODEL_NAME, LOCAL_EMBEDDING_DEVICE
 
-DB_PATH = os.path.expanduser("~/.config/monika/memory.db")
+DB_PATH = str(APP_DIR / "memory.db")
 
 # Nombre max de résultats sémantiques, et seuil de similarité cosinus minimal
 SEMANTIC_TOP_K = 5

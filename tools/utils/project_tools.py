@@ -7,14 +7,12 @@ Création de projets complets (dossier local + dépôt GitHub + Vault Obsidian).
 import os
 import subprocess
 from datetime import datetime
-
-CODE_BASE_DIR = "/home/adam/Documents/Code"
-OBSIDIAN_BASE_DIR = "/home/adam/Documents/Obsidian"  # à adapter à vos Vaults Obsidian
+from config import CODE_BASE_DIR, OBSIDIAN_BASE_DIR
 
 
 def create_full_project(project_name: str, private: bool = True) -> str:
     """Crée un projet complet :
-    1. Dossier dans /home/adam/Documents/Code/<project_name>
+    1. Dossier dans ~/Documents/Code/<project_name>
     2. Initialisation d'un repo Git et création du repo sur GitHub via 'gh'
     3. Création d'un dossier Vault Obsidian dédié avec un README/Notes de départ
     """

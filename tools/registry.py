@@ -206,7 +206,7 @@ TOOLS_SCHEMA = [
         "analyze_image",
         "Analyse visuellement une image locale ou une capture d'écran (extraire du texte, lire des erreurs, décrire un schéma, identifier des éléments à l'écran).",
         {
-            "image_path": {"type": "string", "description": "Le chemin du fichier image à analyser (ex: '/home/adam/Images/screenshot.png')."},
+            "image_path": {"type": "string", "description": "Le chemin du fichier image à analyser (ex: '~/Images/screenshot.png')."},
             "prompt": {"type": "string", "description": "Consigne précise sur ce que l'agent doit observer ou chercher dans l'image (ex: 'Que dit ce message d'erreur ?')."},
         },
         ["image_path"],

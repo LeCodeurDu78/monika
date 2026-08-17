@@ -6,8 +6,9 @@ Gestionnaire de carnet d'adresses pour Monika.
 
 import os
 import json
+from config import APP_DIR
 
-CONTACTS_FILE = os.path.expanduser("~/.config/monika/contacts.json")
+CONTACTS_FILE = str(APP_DIR / "contacts.json")
 
 
 def _load_contacts() -> dict:

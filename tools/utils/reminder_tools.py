@@ -14,8 +14,9 @@ qu'il est renvoyé par 'due', il est marqué 'notified'.
 import os
 import sqlite3
 from datetime import datetime
+from config import APP_DIR
 
-DB_PATH = os.path.expanduser("~/.config/monika/reminders.db")
+DB_PATH = str(APP_DIR / "reminders.db")
 
 
 def _init_db() -> None:

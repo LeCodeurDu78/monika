@@ -20,8 +20,9 @@ seul à connaître `process_user_message` — ça évite un import circulaire.
 import os
 import sqlite3
 from datetime import datetime, timedelta
+from config import APP_DIR
 
-DB_PATH = os.path.expanduser("~/.config/monika/scheduler.db")
+DB_PATH = str(APP_DIR / "scheduler.db")
 
 VALID_SCHEDULE_TYPES = ("once", "daily", "interval")
 SCHEDULE_LABELS = {"once": "une fois", "daily": "tous les jours", "interval": "en boucle"}

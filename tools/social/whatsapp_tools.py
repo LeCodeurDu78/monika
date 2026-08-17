@@ -4,13 +4,12 @@ tools/social/whatsapp_tools.py
 Envoi de messages WhatsApp fiables via Playwright.
 """
 
-import os
 from urllib.parse import quote
-
+from config import APP_DIR
 from playwright.sync_api import sync_playwright
 from tools.social.contact_tools import get_phone_by_name
 
-SESSION_DIR = os.path.expanduser("~/.config/monika/.monika_whatsapp_session")
+SESSION_DIR = str(APP_DIR / ".monika_whatsapp_session")
 
 
 def send_whatsapp_message(recipient: str, message: str) -> str:

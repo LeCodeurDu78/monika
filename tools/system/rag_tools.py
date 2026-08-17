@@ -29,8 +29,9 @@ from tools.memory import (
     blob_to_embedding,
     cosine_similarity,
 )
+from config import APP_DIR
 
-DB_PATH = os.path.expanduser("~/.config/monika/rag.db")
+DB_PATH = str(APP_DIR / "rag.db")
 
 # Formats pris en charge nativement (texte brut) ou via une librairie optionnelle (pdf, docx)
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".py", ".log"}
