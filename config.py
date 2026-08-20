@@ -8,11 +8,17 @@ load_dotenv()
 
 # Client OpenAI
 client = OpenAI(
-    base_url=os.getenv("LLM_BASE_URL", "http://localhost:3001/v1"),
+    base_url=os.getenv("LLM_BASE_URL"),
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
-MODEL_NAME = "gpt-oss-120b"
+client_vision = OpenAI(
+    base_url=os.getenv("LLM_VISION_URL"),
+    api_key=os.getenv("OPENAI_API_KEY_VISION")
+)
+
+
+MODEL_NAME = "qwen3.5-122b-a10b"
 VISION_MODEL_NAME = "gemini-3-flash-preview"
 
 # Détection automatique du dossier utilisateur de Monika
@@ -29,7 +35,7 @@ OBSIDIAN_BASE_DIR = os.path.expanduser("~/Documents/Obsidian")
 wikipedia.set_lang("fr")
 
 SYSTEM_PROMPT = (
-    "Tu es Monika, un assistant IA poli, concis et efficace. "
+    "Tu es Monika, une assistante IA polie, concise et efficace. "
     "Tu as accès à l'ordinateur de l'utilisateur pour effectuer des actions requises."
 )
 
@@ -54,12 +60,14 @@ XTTS_SPEAKER_WAV = Path(
     )
 )
 
-SAMPLE_RATE = 16000
 FRAME_MS = 30
-VAD_AGGRESSIVENESS = int(os.getenv("VOICE_VAD_AGGRESSIVENESS", "2"))
+SAMPLE_RATE = 16000
 SILENCE_MS = int(os.getenv("VOICE_SILENCE_MS", "900"))
+VAD_AGGRESSIVENESS = int(os.getenv("VOICE_VAD_AGGRESSIVENESS", "2"))
 MAX_RECORD_SECONDS = float(os.getenv("VOICE_MAX_RECORD_SECONDS", "20"))
 
 EXIT_WORDS = ("stop", "au revoir", "quitte la session", "quitte monika")
+
+
 REMINDER_CHECK_INTERVAL_SECONDS = 60
 SCHEDULER_CHECK_INTERVAL_SECONDS = 30

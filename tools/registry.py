@@ -26,6 +26,7 @@ from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
 from tools.memory import memory_control
 from tools.system.rag_tools import rag_control
+from tools.system.graph_rag import graph_search, graph_backfill
 from tools.system.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool
 from tools.utils.joke_tools import get_joke
@@ -65,6 +66,8 @@ AVAILABLE_TOOLS = {
     "run_script": run_script,
     "memory_control": memory_control,
     "rag_control": rag_control,
+    "graph_search": graph_search,
+    "graph_backfill": graph_backfill,
     "analyze_image": analyze_image,
     "create_custom_tool": create_custom_tool,
     "get_joke": get_joke,
@@ -201,6 +204,18 @@ TOOLS_SCHEMA = [
             "doc_name": {"type": "string", "description": "Chemin exact du document à retirer de l'index, tel qu'affiché par action='list' (requis pour action='delete')."},
         },
         ["action"],
+    ),
+    _schema(
+        "graph_search",
+        "Interroge le graphe de connaissances (entités + relations extraites des documents indexés via rag_control) pour répondre à des questions RELATIONNELLES précises entre des éléments identifiés (ex: 'qui a recommandé quoi à qui', 'quel projet dépend de quel outil', 'où habite X'). Complète rag_search : préfère rag_control(search) pour retrouver un passage de texte par similarité, et graph_search pour une relation précise entre entités déjà connues du graphe.",
+        {"query": {"type": "string", "description": "La question relationnelle posée en langage naturel (ex: 'qui a recommandé le restaurant à Adam ?')."}},
+        ["query"],
+    ),
+    _schema(
+        "graph_backfill",
+        "Force l'extraction immédiate des entités/relations pour les documents déjà indexés via rag_control mais pas encore intégrés au graphe de connaissances (normalement fait automatiquement par petits lots à chaque graph_search, mais utile après une grosse indexation pour ne pas attendre).",
+        {"limit": {"type": "integer", "description": "Nombre maximum de chunks à traiter en une fois (par défaut 200)."}},
+        [],
     ),
     _schema(
         "analyze_image",

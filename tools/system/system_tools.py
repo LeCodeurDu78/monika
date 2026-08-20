@@ -67,3 +67,26 @@ def system_control(action: str, value: int = 5, filename: str = None) -> str:
         return "Action système non reconnue."
     except Exception as e:
         return f"Erreur lors de l'exécution : {str(e)}"
+
+
+def get_system_stats() -> str:
+    """Obtient les métriques d'utilisation en temps réel du système (CPU, RAM, Disque, Batterie)."""
+    try:
+        cpu = psutil.cpu_percent(interval=0.5)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage(str(Path.home()))
+
+        stats = [
+            f"CPU : {cpu}%",
+            f"RAM : {mem.percent}% utilisée ({mem.used // (1024**2)} Mo / {mem.total // (1024**2)} Mo)",
+            f"Disque : {disk.percent}% utilisé ({disk.used // (1024**3)} Go / {disk.total // (1024**3)} Go)",
+        ]
+
+        battery = psutil.sensors_battery()
+        if battery is not None:
+            etat = "en charge" if battery.power_plugged else "sur batterie"
+            stats.append(f"Batterie : {battery.percent}% ({etat})")
+
+        return " | ".join(stats)
+    except Exception as e:
+        return f"Erreur lors de la récupération des statistiques système : {str(e)}"
