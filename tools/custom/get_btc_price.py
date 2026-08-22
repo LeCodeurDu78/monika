@@ -1,15 +1,12 @@
-"""
-Récupère le prix actuel du Bitcoin en euros via l'API publique de CoinGecko.
-"""
+"""Récupère le prix actuel du Bitcoin en euros via l'API publique de CoinGecko."""
 
 import json
 import sys
 from urllib import request, error
 
+
 def get_btc_price() -> float:
-    """Retourne le prix du Bitcoin en EUR comme un float.
-    Utilise l'endpoint public de CoinGecko.
-    """
+    """Retourne le prix du Bitcoin en EUR comme un float."""
     api_url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur"
     try:
         with request.urlopen(api_url, timeout=10) as resp:
@@ -21,6 +18,7 @@ def get_btc_price() -> float:
         raise RuntimeError(f"Erreur réseau : {e}") from e
     except (KeyError, ValueError) as e:
         raise RuntimeError(f"Réponse inattendue : {e}") from e
+
 
 if __name__ == "__main__":
     try:

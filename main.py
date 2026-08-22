@@ -1,8 +1,4 @@
-"""
-main.py
---------
-Point d'entrée de Monika.
-"""
+"""Point d'entrée de Monika."""
 
 from agent import run_monika, run_monika_voice
 from tools.memory import warmup as warmup_embeddings

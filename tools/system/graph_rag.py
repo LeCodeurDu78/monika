@@ -1,29 +1,4 @@
-"""
-tools/system/graph_rag.py
---------------------------
-v4 — Mémoire augmentée : Graph RAG (graphe de connaissances) en complément du
-RAG vectoriel existant (tools/system/rag_tools.py). Les deux cohabitent :
-`rag_search` reste la meilleure option pour la similarité sémantique floue,
-`graph_search` (ce module) pour les questions relationnelles précises
-("qui a recommandé quoi à qui", "quel projet dépend de quel outil"...).
-
-Fonctionnement
---------------
-1. Extraction : pour chaque chunk déjà indexé dans rag.db (tools/system/
-   rag_tools.py), un appel LLM structuré (JSON strict) extrait les entités
-   et relations qu'il contient. Cette étape est un "backfill" : elle traite
-   par lots (GRAPH_BACKFILL_BATCH_SIZE) les chunks pas encore passés dans le
-   graphe, exactement comme rag_tools.py revectorise ses embeddings
-   manquants — appelé automatiquement à chaque recherche, plus une fonction
-   dédiée pour un backfill complet en une fois.
-2. Stockage : deux tables SQLite (`entities`, `relations`) dans graph.db,
-   une base séparée de rag.db et memory.db pour ne rien casser des deux
-   autres mémoires en cas de problème sur celle-ci.
-3. Requête hybride : la recherche vectorielle existante (embed_text +
-   cosine_similarity, tools/memory.py) trouve les chunks les plus proches de
-   la question, puis une traversée de graphe (1 à 2 sauts) enrichit le
-   résultat avec les entités liées non retrouvées par la seule similarité.
-"""
+"""v4 — Mémoire augmentée : Graph RAG (graphe de connaissances) en complément du RAG vectoriel existant (tools/system/rag_tools.py)."""
 
 import json
 import os
@@ -38,16 +13,14 @@ from config import APP_DIR
 
 DB_PATH = str(APP_DIR / "graph.db")
 
-# Nombre de chunks traités par lot lors d'un backfill (déclenché automatiquement
-# à chaque recherche, comme le backfill d'embeddings de rag_tools.py)
+
 GRAPH_BACKFILL_BATCH_SIZE = 15
 
-# Recherche vectorielle : nombre de chunks "porte d'entrée" dans le graphe, et
-# seuil de similarité cosinus minimal
+
 GRAPH_SEED_TOP_K = 5
 GRAPH_SEED_MIN_SIMILARITY = 0.35
 
-# Traversée de graphe : profondeur (en sauts) et nombre max de relations affichées
+
 GRAPH_MAX_HOPS = 2
 GRAPH_MAX_RELATIONS = 25
 
@@ -74,10 +47,6 @@ EXTRACTION_SYSTEM_PROMPT = (
 )
 
 
-# --------------------------------------------------------------------------
-# Base de données
-# --------------------------------------------------------------------------
-
 def _init_db() -> None:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
@@ -101,8 +70,7 @@ def _init_db() -> None:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Suivi des chunks déjà passés par l'extraction, pour ne jamais
-        # retraiter deux fois le même chunk lors des backfills successifs.
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS processed_chunks (
                 source TEXT NOT NULL,
@@ -134,10 +102,6 @@ def _get_or_create_entity(cursor: sqlite3.Cursor, name: str, entity_type: str = 
     return cursor.lastrowid
 
 
-# --------------------------------------------------------------------------
-# Extraction LLM (entités + relations)
-# --------------------------------------------------------------------------
-
 def _strip_code_fences(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
@@ -148,9 +112,7 @@ def _strip_code_fences(text: str) -> str:
 
 
 def _extract_entities_relations(text: str) -> Optional[dict]:
-    """Appelle le LLM pour extraire {entities, relations} d'un chunk de
-    texte. Renvoie None si l'appel échoue ou si la réponse n'est pas un JSON
-    exploitable (on préfère ignorer un chunk plutôt que planter le backfill)."""
+    """Appelle le LLM pour extraire {entities, relations} d'un chunk de texte."""
     from config import client, MODEL_NAME
 
     try:
@@ -158,7 +120,7 @@ def _extract_entities_relations(text: str) -> Optional[dict]:
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
-                {"role": "user", "content": text[:3000]},  # un chunk RAG dépasse rarement cette taille
+                {"role": "user", "content": text[:3000]},
             ],
         )
         raw = response.choices[0].message.content or ""
@@ -175,11 +137,9 @@ def _extract_entities_relations(text: str) -> Optional[dict]:
 
 
 def _backfill_batch(conn: sqlite3.Connection, limit: int = GRAPH_BACKFILL_BATCH_SIZE) -> int:
-    """Extrait entités/relations pour les chunks de rag.db pas encore traités
-    (limité à `limit` chunks pour rester rapide, appelé automatiquement avant
-    chaque recherche). Renvoie le nombre de chunks traités."""
+    """Extrait entités/relations pour les chunks de rag.db pas encore traités (limité à `limit` chunks pour rester rapide, appelé automatiquement avant..."""
     if not os.path.exists(RAG_DB_PATH):
-        return 0  # rien n'a encore été indexé via rag_control(ingest)
+        return 0
 
     cursor = conn.cursor()
     processed_count = 0
@@ -198,10 +158,10 @@ def _backfill_batch(conn: sqlite3.Connection, limit: int = GRAPH_BACKFILL_BATCH_
             (source, chunk_index),
         )
         if cursor.fetchone():
-            continue  # déjà traité lors d'un backfill précédent
+            continue
 
         extracted = _extract_entities_relations(content)
-        processed_count += 1  # on marque comme traité même en cas d'échec d'extraction, pour ne pas boucler dessus indéfiniment
+        processed_count += 1
         cursor.execute(
             "INSERT OR IGNORE INTO processed_chunks (source, chunk_index) VALUES (?, ?)",
             (source, chunk_index),
@@ -228,7 +188,7 @@ def _backfill_batch(conn: sqlite3.Connection, limit: int = GRAPH_BACKFILL_BATCH_
             from_id = entity_ids_by_name.get(from_name)
             to_id = entity_ids_by_name.get(to_name)
             if not (from_id and to_id and relation_label):
-                continue  # relation incomplète ou pointant vers une entité non extraite : on l'ignore plutôt que de deviner
+                continue
 
             cursor.execute(
                 "INSERT INTO relations (from_entity_id, relation, to_entity_id, source, chunk_index) VALUES (?, ?, ?, ?, ?)",
@@ -240,9 +200,7 @@ def _backfill_batch(conn: sqlite3.Connection, limit: int = GRAPH_BACKFILL_BATCH_
 
 
 def graph_backfill(limit: int = 200) -> str:
-    """Force un backfill complet (ou jusqu'à `limit` chunks) : à utiliser
-    après une grosse indexation RAG plutôt que d'attendre que les recherches
-    successives rattrapent le retard petit à petit."""
+    """Force un backfill complet (ou jusqu'à `limit` chunks) : à utiliser après une grosse indexation RAG plutôt que d'attendre que les recherches..."""
     _init_db()
     with sqlite3.connect(DB_PATH) as conn:
         count = _backfill_batch(conn, limit=limit)
@@ -251,19 +209,16 @@ def graph_backfill(limit: int = 200) -> str:
     return f"🕸️ Backfill terminé : {count} chunk(s) analysé(s) et intégré(s) au graphe de connaissances."
 
 
-# --------------------------------------------------------------------------
-# Recherche hybride (vecteur -> chunks, puis traversée de graphe)
-# --------------------------------------------------------------------------
-
 def _semantic_seed_chunks(query_embedding: np.ndarray) -> list[tuple[str, int, float]]:
-    """Renvoie les (source, chunk_index, similarité) des chunks rag.db les
-    plus proches de la question — ce sont les points d'entrée dans le graphe."""
+    """Renvoie les (source, chunk_index, similarité) des chunks rag.db les plus proches de la question — ce sont les points d'entrée dans le graphe."""
     if not os.path.exists(RAG_DB_PATH):
         return []
 
     with sqlite3.connect(RAG_DB_PATH) as rag_conn:
         rag_cursor = rag_conn.cursor()
-        rag_cursor.execute("SELECT source, chunk_index, embedding FROM rag_chunks WHERE embedding IS NOT NULL")
+        rag_cursor.execute(
+            "SELECT source, chunk_index, embedding FROM rag_chunks WHERE embedding IS NOT NULL"
+        )
         rows = rag_cursor.fetchall()
 
     scored = []
@@ -277,8 +232,7 @@ def _semantic_seed_chunks(query_embedding: np.ndarray) -> list[tuple[str, int, f
 
 
 def _entities_from_chunks(cursor: sqlite3.Cursor, chunks: list[tuple[str, int, float]]) -> dict[int, str]:
-    """Entités liées aux chunks trouvés par similarité sémantique (portes
-    d'entrée dans le graphe)."""
+    """Entités liées aux chunks trouvés par similarité sémantique (portes d'entrée dans le graphe)."""
     entity_ids: dict[int, str] = {}
     for source, chunk_index, _ in chunks:
         cursor.execute(
@@ -295,9 +249,7 @@ def _entities_from_chunks(cursor: sqlite3.Cursor, chunks: list[tuple[str, int, f
 
 
 def _entities_matching_query(cursor: sqlite3.Cursor, query: str) -> dict[int, str]:
-    """Entités directement nommées dans la question (ex: 'Adam', 'Monika'),
-    en complément de la recherche par similarité — utile pour les questions
-    relationnelles précises où le nom de l'entité est explicite."""
+    """Entités directement nommées dans la question (ex: 'Adam', 'Monika'), en complément de la recherche par similarité — utile pour les questions..."""
     cursor.execute("SELECT id, name FROM entities")
     matches = {}
     query_lower = query.lower()
@@ -307,10 +259,10 @@ def _entities_matching_query(cursor: sqlite3.Cursor, query: str) -> dict[int, st
     return matches
 
 
-def _traverse_graph(cursor: sqlite3.Cursor, seed_ids: set[int], max_hops: int = GRAPH_MAX_HOPS) -> list[tuple]:
-    """Traversée en largeur (BFS) du graphe à partir des entités "porte
-    d'entrée", jusqu'à `max_hops` sauts. Renvoie les relations rencontrées
-    (dédupliquées) : (from_name, relation, to_name, source, chunk_index)."""
+def _traverse_graph(
+    cursor: sqlite3.Cursor, seed_ids: set[int], max_hops: int = GRAPH_MAX_HOPS
+) -> list[tuple]:
+    """Traversée en largeur (BFS) du graphe à partir des entités "porte d'entrée", jusqu'à `max_hops` sauts."""
     visited_entities = set(seed_ids)
     frontier = set(seed_ids)
     collected_relation_ids = set()
@@ -350,12 +302,7 @@ def _traverse_graph(cursor: sqlite3.Cursor, seed_ids: set[int], max_hops: int = 
 
 
 def graph_search(query: str) -> str:
-    """Interroge le graphe de connaissances de Monika (entités + relations
-    extraites des documents indexés via rag_control) pour répondre à des
-    questions relationnelles précises (ex: "qui a recommandé quoi à qui",
-    "quel projet dépend de quel outil", "où habite X"). Complète rag_search :
-    utilise plutôt cet outil quand la question porte sur une relation entre
-    des éléments précis plutôt que sur un passage de texte à retrouver."""
+    """Interroge le graphe de connaissances de Monika (entités + relations extraites des documents indexés via rag_control) pour répondre à des questions..."""
     if not query.strip():
         return "Erreur : 'query' est requis pour interroger le graphe de connaissances."
 
@@ -365,8 +312,6 @@ def graph_search(query: str) -> str:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
 
-            # Rattrape un petit lot de chunks non encore traités avant de
-            # chercher, pour que le graphe reste à jour sans backfill manuel.
             _backfill_batch(conn, limit=GRAPH_BACKFILL_BATCH_SIZE)
 
             seed_entities: dict[int, str] = {}

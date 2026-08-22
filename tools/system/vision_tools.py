@@ -1,8 +1,4 @@
-"""
-tools/system/vision_tools.py
------------------------------
-Analyse d'images pour Monika via un modèle vision multimodal.
-"""
+"""Analyse d'images pour Monika via un modèle vision multimodal."""
 
 import base64
 import os
@@ -15,7 +11,9 @@ def _encode_image(image_path: str) -> str:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
 
-def analyze_image(image_path: str, prompt: str = "Décris cette image en détail et explique ce qu'elle contient.") -> str:
+def analyze_image(
+    image_path: str, prompt: str = "Décris cette image en détail et explique ce qu'elle contient."
+) -> str:
     """Analyse une image locale ou une capture d'écran avec le modèle vision."""
     try:
         path = os.path.expanduser(image_path)
@@ -23,7 +21,9 @@ def analyze_image(image_path: str, prompt: str = "Décris cette image en détail
             return f"Erreur : Le fichier image '{path}' est introuvable."
 
         ext = os.path.splitext(path)[1].lower().replace(".", "")
-        mime_type = "image/png" if ext == "png" else f"image/{ext if ext in ['jpeg', 'jpg', 'webp'] else 'png'}"
+        mime_type = (
+            "image/png" if ext == "png" else f"image/{ext if ext in ['jpeg', 'jpg', 'webp'] else 'png'}"
+        )
         base64_image = _encode_image(path)
 
         response = client.chat.completions.create(
@@ -35,13 +35,11 @@ def analyze_image(image_path: str, prompt: str = "Décris cette image en détail
                         {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{base64_image}"
-                            },
+                            "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
                         },
                     ],
                 }
-            ]
+            ],
         )
 
         analysis = response.choices[0].message.content

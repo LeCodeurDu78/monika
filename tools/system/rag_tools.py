@@ -1,19 +1,4 @@
-"""
-tools/system/rag_tools.py
---------------------------
-RAG (Retrieval-Augmented Generation) sur les documents personnels de
-l'utilisateur.
-
-L'utilisateur indexe un ou plusieurs fichiers/dossiers (PDF, Word, texte,
-markdown...) via l'action 'ingest' : chaque document est découpé en chunks,
-vectorisés localement avec BGE-M3 (backend partagé, voir tools/memory.py) et
-stockés dans une base SQLite dédiée. L'action 'search' vectorise la question
-et renvoie les chunks les plus proches, avec repli sur une recherche par
-mot-clé si les embeddings sont indisponibles.
-
-Les dépendances d'extraction (pypdf, python-docx) sont optionnelles : leur
-absence ne casse pas les autres formats.
-"""
+"""RAG (Retrieval-Augmented Generation) sur les documents personnels de l'utilisateur."""
 
 import os
 import sqlite3
@@ -33,29 +18,25 @@ from config import APP_DIR
 
 DB_PATH = str(APP_DIR / "rag.db")
 
-# Formats pris en charge nativement (texte brut) ou via une librairie optionnelle (pdf, docx)
+
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".py", ".log"}
 PDF_EXTENSIONS = {".pdf"}
 DOCX_EXTENSIONS = {".docx"}
 SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | PDF_EXTENSIONS | DOCX_EXTENSIONS
 
-# Découpage en chunks (en caractères), avec chevauchement pour ne pas couper une idée à la frontière
+
 CHUNK_SIZE = 900
 CHUNK_OVERLAP = 150
 
-# Nombre max de chunks renvoyés, et seuil de similarité cosinus minimal
+
 RAG_TOP_K = 5
 RAG_MIN_SIMILARITY = 0.35
 
-# Nombre max de chunks revectorisés (backfill) par recherche
+
 BACKFILL_BATCH_SIZE = 25
 
 _IGNORED_DIR_NAMES = {"__pycache__", ".git", "node_modules", ".venv", "venv"}
 
-
-# --------------------------------------------------------------------------
-# Base de données
-# --------------------------------------------------------------------------
 
 def _init_db() -> None:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -75,8 +56,7 @@ def _init_db() -> None:
 
 
 def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
-    """Vectorise les chunks sans embedding, et revectorise ceux dont la
-    dimension stockée ne correspond plus au modèle actuel."""
+    """Vectorise les chunks sans embedding, et revectorise ceux dont la dimension stockée ne correspond plus au modèle actuel."""
     cursor = conn.cursor()
     current_dim = embedding_dimension()
 
@@ -99,17 +79,14 @@ def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
         vector = embed_text(content)
         if vector is None:
             break
-        cursor.execute("UPDATE rag_chunks SET embedding = ? WHERE id = ?", (embedding_to_blob(vector), row_id))
+        cursor.execute(
+            "UPDATE rag_chunks SET embedding = ? WHERE id = ?", (embedding_to_blob(vector), row_id)
+        )
     conn.commit()
 
 
-# --------------------------------------------------------------------------
-# Extraction de texte par format
-# --------------------------------------------------------------------------
-
 def _extract_text(file_path: str) -> tuple[Optional[str], Optional[str]]:
-    """Extrait le texte brut d'un fichier. Renvoie (texte, erreur) : l'un des
-    deux est toujours None."""
+    """Extrait le texte brut d'un fichier."""
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext in TEXT_EXTENSIONS:
@@ -123,7 +100,10 @@ def _extract_text(file_path: str) -> tuple[Optional[str], Optional[str]]:
         try:
             from pypdf import PdfReader
         except ImportError:
-            return None, "Le module 'pypdf' n'est pas installé (pip install pypdf) : impossible de lire les PDF."
+            return (
+                None,
+                "Le module 'pypdf' n'est pas installé (pip install pypdf) : impossible de lire les PDF.",
+            )
         try:
             reader = PdfReader(file_path)
             pages_text = [page.extract_text() or "" for page in reader.pages]
@@ -135,14 +115,20 @@ def _extract_text(file_path: str) -> tuple[Optional[str], Optional[str]]:
         try:
             import docx
         except ImportError:
-            return None, "Le module 'python-docx' n'est pas installé (pip install python-docx) : impossible de lire les .docx."
+            return (
+                None,
+                "Le module 'python-docx' n'est pas installé (pip install python-docx) : impossible de lire les .docx.",
+            )
         try:
             document = docx.Document(file_path)
             return "\n".join(p.text for p in document.paragraphs), None
         except Exception as e:
             return None, f"Impossible de lire le document '{file_path}' : {e}"
 
-    return None, f"Format non pris en charge : '{ext}' (formats acceptés : {', '.join(sorted(SUPPORTED_EXTENSIONS))})."
+    return (
+        None,
+        f"Format non pris en charge : '{ext}' (formats acceptés : {', '.join(sorted(SUPPORTED_EXTENSIONS))}).",
+    )
 
 
 def _iter_supported_files(path: str):
@@ -160,8 +146,7 @@ def _iter_supported_files(path: str):
 
 
 def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
-    """Découpe un texte en morceaux d'environ `chunk_size` caractères, en
-    coupant sur un espace plutôt qu'en plein milieu d'un mot."""
+    """Découpe un texte en morceaux d'environ `chunk_size` caractères, en coupant sur un espace plutôt qu'en plein milieu d'un mot."""
     text = text.strip()
     if not text:
         return []
@@ -190,10 +175,6 @@ def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OV
     return chunks
 
 
-# --------------------------------------------------------------------------
-# Recherche
-# --------------------------------------------------------------------------
-
 def _keyword_search(conn: sqlite3.Connection, query: str) -> list[tuple[str, int, str]]:
     query_str = f"%{query.strip().lower()}%"
     cursor = conn.cursor()
@@ -204,9 +185,13 @@ def _keyword_search(conn: sqlite3.Connection, query: str) -> list[tuple[str, int
     return cursor.fetchall()
 
 
-def _semantic_search(conn: sqlite3.Connection, query_embedding: np.ndarray) -> list[tuple[str, int, str, float]]:
+def _semantic_search(
+    conn: sqlite3.Connection, query_embedding: np.ndarray
+) -> list[tuple[str, int, str, float]]:
     cursor = conn.cursor()
-    cursor.execute("SELECT source, chunk_index, content, embedding FROM rag_chunks WHERE embedding IS NOT NULL")
+    cursor.execute(
+        "SELECT source, chunk_index, content, embedding FROM rag_chunks WHERE embedding IS NOT NULL"
+    )
 
     scored = []
     for source, chunk_index, content, blob in cursor.fetchall():
@@ -218,23 +203,8 @@ def _semantic_search(conn: sqlite3.Connection, query_embedding: np.ndarray) -> l
     return scored[:RAG_TOP_K]
 
 
-# --------------------------------------------------------------------------
-# Outil principal
-# --------------------------------------------------------------------------
-
 def rag_control(action: str, path: str = "", query: str = "", doc_name: str = "") -> str:
-    """Gère la base de connaissances RAG sur les documents personnels de l'utilisateur.
-
-    Actions disponibles :
-    - 'ingest' : Indexe un fichier ou un dossier (requiert 'path'). Formats :
-                 .txt, .md, .csv, .json, .py, .pdf, .docx. Réindexer un fichier
-                 déjà indexé remplace son contenu précédent.
-    - 'search' : Cherche par sens les passages pertinents pour 'query', avec
-                 repli sur la recherche par mot-clé si besoin.
-    - 'list'   : Liste les documents indexés et leur nombre de chunks.
-    - 'delete' : Supprime un document de l'index (requiert 'doc_name', le
-                 chemin exact tel qu'affiché par 'list').
-    """
+    """Gère la base de connaissances RAG sur les documents personnels de l'utilisateur."""
     _init_db()
 
     try:
@@ -268,9 +238,9 @@ def rag_control(action: str, path: str = "", query: str = "", doc_name: str = ""
                         skipped.append(f"{file_path} (aucun texte extractible)")
                         continue
 
-                    cursor.execute("DELETE FROM rag_chunks WHERE source = ?", (file_path,))  # réindexation : on remplace les anciens chunks
+                    cursor.execute("DELETE FROM rag_chunks WHERE source = ?", (file_path,))
 
-                    vectors = embed_texts(chunks)  # vectorisation par lot, plus rapide que chunk par chunk
+                    vectors = embed_texts(chunks)
 
                     for i, chunk in enumerate(chunks):
                         if vectors is not None and i < len(vectors):
@@ -286,7 +256,9 @@ def rag_control(action: str, path: str = "", query: str = "", doc_name: str = ""
                     indexed.append(f"{file_path} ({len(chunks)} chunks)")
                     total_chunks += len(chunks)
 
-                summary = f"📚 Indexation terminée : {len(indexed)} document(s), {total_chunks} chunks au total."
+                summary = (
+                    f"📚 Indexation terminée : {len(indexed)} document(s), {total_chunks} chunks au total."
+                )
                 if indexed:
                     summary += "\n✅ Indexés :\n" + "\n".join(f"  • {i}" for i in indexed)
                 if skipped:
@@ -313,13 +285,14 @@ def rag_control(action: str, path: str = "", query: str = "", doc_name: str = ""
                 if not keyword_results:
                     return f"Aucun passage pertinent trouvé pour '{query}' dans les documents indexés."
 
-                lines = [f"• [{os.path.basename(src)} — chunk {idx}]\n{content}" for src, idx, content in keyword_results]
+                lines = [
+                    f"• [{os.path.basename(src)} — chunk {idx}]\n{content}"
+                    for src, idx, content in keyword_results
+                ]
                 return "🔍 Passages trouvés par mot-clé :\n\n" + "\n\n".join(lines)
 
             elif action == "list":
-                cursor.execute(
-                    "SELECT source, COUNT(*) FROM rag_chunks GROUP BY source ORDER BY source"
-                )
+                cursor.execute("SELECT source, COUNT(*) FROM rag_chunks GROUP BY source ORDER BY source")
                 rows = cursor.fetchall()
                 if not rows:
                     return "Aucun document indexé pour l'instant. Utilise l'action 'ingest' pour en ajouter."

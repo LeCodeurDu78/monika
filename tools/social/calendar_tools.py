@@ -1,8 +1,4 @@
-"""
-tools/social/calendar_tools.py
--------------------------------
-Consultation et création d'événements Google Calendar.
-"""
+"""Consultation et création d'événements Google Calendar."""
 
 import os
 import datetime
@@ -15,6 +11,7 @@ from config import APP_DIR
 CREDENTIALS_FILE = str(APP_DIR / "credentials_calendar.json")
 TOKEN_FILE = str(APP_DIR / "token.json")
 SCOPES = ['https://www.googleapis.com/auth/calendar']
+
 
 def _get_calendar_service():
     """Gère l'authentification OAuth2 auprès de l'API Google Calendar."""
@@ -36,18 +33,27 @@ def _get_calendar_service():
             token.write(creds.to_json())
     return build('calendar', 'v3', credentials=creds)
 
-def calendar_control(action: str, summary: str = None, start_time: str = None, end_time: str = None, limit: int = 5) -> str:
+
+def calendar_control(
+    action: str, summary: str = None, start_time: str = None, end_time: str = None, limit: int = 5
+) -> str:
     """Gère la consultation et l'ajout d'événements dans Google Calendar."""
     try:
         service = _get_calendar_service()
 
         if action == "list":
             now = datetime.datetime.utcnow().isoformat() + 'Z'
-            events_result = service.events().list(
-                calendarId='primary', timeMin=now,
-                maxResults=limit, singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            events_result = (
+                service.events()
+                .list(
+                    calendarId='primary',
+                    timeMin=now,
+                    maxResults=limit,
+                    singleEvents=True,
+                    orderBy='startTime',
+                )
+                .execute()
+            )
             events = events_result.get('items', [])
 
             if not events:

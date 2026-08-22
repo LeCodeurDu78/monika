@@ -1,15 +1,4 @@
-"""
-tools/registry.py
-------------------
-Registre unique des outils de Monika : chaque outil est décrit une seule fois
-(fonction Python exécutable + schéma JSON), sous forme de deux vues d'un même
-registre : `AVAILABLE_TOOLS` (nom -> fonction) et `TOOLS_SCHEMA` (function
-calling).
-
-Les outils "custom" créés à la volée par Monika (create_custom_tool) sont
-chargés dynamiquement depuis tools/custom/ et injectés dans ces deux
-structures par `sync_custom_tools`.
-"""
+"""Registre unique des outils de Monika : chaque outil est décrit une seule fois (fonction Python exécutable + schéma JSON), sous forme de deux vues d'un même..."""
 
 import importlib
 import inspect
@@ -82,7 +71,12 @@ TOOLS_SCHEMA = [
     _schema(
         "open_application",
         "Ouvre une application installée sur l'ordinateur de l'utilisateur.",
-        {"app_name": {"type": "string", "description": "Le nom de l'application (ex: notepad, chrome, calc)"}},
+        {
+            "app_name": {
+                "type": "string",
+                "description": "Le nom de l'application (ex: notepad, chrome, calc)",
+            }
+        },
         ["app_name"],
     ),
     _schema(
@@ -95,9 +89,16 @@ TOOLS_SCHEMA = [
         "manage_files",
         "Liste, crée des dossiers ou déplace des fichiers sur l'ordinateur.",
         {
-            "action": {"type": "string", "enum": ["list", "create_dir", "move"], "description": "L'action à effectuer"},
+            "action": {
+                "type": "string",
+                "enum": ["list", "create_dir", "move"],
+                "description": "L'action à effectuer",
+            },
             "path": {"type": "string", "description": "Le chemin du fichier ou dossier à cibler"},
-            "target_folder": {"type": "string", "description": "Le dossier de destination (nécessaire uniquement si action='move')"},
+            "target_folder": {
+                "type": "string",
+                "description": "Le dossier de destination (nécessaire uniquement si action='move')",
+            },
         },
         ["action", "path"],
     ),
@@ -115,15 +116,21 @@ TOOLS_SCHEMA = [
                 "description": "Pourcentage de variation du volume. Utilisé uniquement pour volume_up/volume_down.",
             },
         },
-        # 'value' n'est pas requis : seul volume_up/volume_down l'utilise (défaut 5 sinon).
         ["action"],
     ),
     _schema(
         "email_control",
         "Permet de lire les derniers e-mails de la boîte de réception ou d'en envoyer un nouveau.",
         {
-            "action": {"type": "string", "enum": ["list", "send"], "description": "'list' pour afficher les derniers messages, 'send' pour en envoyer un."},
-            "recipient": {"type": "string", "description": "Adresse e-mail du destinataire (requis si action='send')."},
+            "action": {
+                "type": "string",
+                "enum": ["list", "send"],
+                "description": "'list' pour afficher les derniers messages, 'send' pour en envoyer un.",
+            },
+            "recipient": {
+                "type": "string",
+                "description": "Adresse e-mail du destinataire (requis si action='send').",
+            },
             "subject": {"type": "string", "description": "Sujet de l'e-mail (requis si action='send')."},
             "body": {"type": "string", "description": "Contenu/Corps de l'e-mail (requis si action='send')."},
             "limit": {"type": "integer", "description": "Nombre de derniers e-mails à lire (par défaut 5)."},
@@ -153,10 +160,23 @@ TOOLS_SCHEMA = [
         "calendar_control",
         "Consulte la liste des événements ou ajoute un rendez-vous dans Google Calendar.",
         {
-            "action": {"type": "string", "enum": ["list", "add"], "description": "'list' pour voir les prochains événements, 'add' pour en créer un nouveau."},
-            "summary": {"type": "string", "description": "Titre du rendez-vous/événement (requis pour action='add')."},
-            "start_time": {"type": "string", "description": "Date et heure de début au format ISO (ex: 2026-08-12T14:00:00)."},
-            "end_time": {"type": "string", "description": "Date et heure de fin au format ISO (ex: 2026-08-12T15:00:00)."},
+            "action": {
+                "type": "string",
+                "enum": ["list", "add"],
+                "description": "'list' pour voir les prochains événements, 'add' pour en créer un nouveau.",
+            },
+            "summary": {
+                "type": "string",
+                "description": "Titre du rendez-vous/événement (requis pour action='add').",
+            },
+            "start_time": {
+                "type": "string",
+                "description": "Date et heure de début au format ISO (ex: 2026-08-12T14:00:00).",
+            },
+            "end_time": {
+                "type": "string",
+                "description": "Date et heure de fin au format ISO (ex: 2026-08-12T15:00:00).",
+            },
             "limit": {"type": "integer", "description": "Nombre d'événements à afficher (par défaut 5)."},
         },
         ["action"],
@@ -165,8 +185,14 @@ TOOLS_SCHEMA = [
         "create_full_project",
         "Initialise un projet complet : crée le dossier dans Code, génère un dépôt GitHub et configure un Vault Obsidian.",
         {
-            "project_name": {"type": "string", "description": "Le nom du projet (ex: monika-v2, api-backend, portfolio)"},
-            "private": {"type": "boolean", "description": "True pour rendre le dépôt GitHub privé (par défaut), False pour public."},
+            "project_name": {
+                "type": "string",
+                "description": "Le nom du projet (ex: monika-v2, api-backend, portfolio)",
+            },
+            "private": {
+                "type": "boolean",
+                "description": "True pour rendre le dépôt GitHub privé (par défaut), False pour public.",
+            },
         },
         ["project_name"],
     ),
@@ -174,8 +200,14 @@ TOOLS_SCHEMA = [
         "run_script",
         "Exécute une commande ou un script Bash dans le terminal local.",
         {
-            "command": {"type": "string", "description": "La commande Bash exacte à exécuter (ex: 'ls -la', 'python3 script.py', 'git status')."},
-            "workdir": {"type": "string", "description": "Le dossier d'exécution de la commande (ex: '/home/adam/Documents/Code/monika')."},
+            "command": {
+                "type": "string",
+                "description": "La commande Bash exacte à exécuter (ex: 'ls -la', 'python3 script.py', 'git status').",
+            },
+            "workdir": {
+                "type": "string",
+                "description": "Le dossier d'exécution de la commande (ex: '/home/adam/Documents/Code/monika').",
+            },
         },
         ["command"],
     ),
@@ -183,10 +215,23 @@ TOOLS_SCHEMA = [
         "memory_control",
         "Stocke ou recherche des informations importantes à long terme (préférences de l'utilisateur, chemins de projets, règles de code, faits personnels). La recherche ('search') est sémantique : elle retrouve les souvenirs par sens, pas seulement par mot-clé exact.",
         {
-            "action": {"type": "string", "enum": ["save", "search", "list"], "description": "'save' pour enregistrer/mettre à jour une mémoire, 'search' pour chercher par sens/mot-clé, 'list' pour tout afficher."},
-            "key": {"type": "string", "description": "Pour 'save' : clé d'identification (ex: 'editeur_prefere'). Pour 'search' : le texte de la requête (ex: 'éditeur de code')."},
-            "value": {"type": "string", "description": "L'information exacte à retenir (requise si action='save')."},
-            "category": {"type": "string", "description": "Catégorie facultative (ex: 'preferences', 'projets', 'regles')."},
+            "action": {
+                "type": "string",
+                "enum": ["save", "search", "list"],
+                "description": "'save' pour enregistrer/mettre à jour une mémoire, 'search' pour chercher par sens/mot-clé, 'list' pour tout afficher.",
+            },
+            "key": {
+                "type": "string",
+                "description": "Pour 'save' : clé d'identification (ex: 'editeur_prefere'). Pour 'search' : le texte de la requête (ex: 'éditeur de code').",
+            },
+            "value": {
+                "type": "string",
+                "description": "L'information exacte à retenir (requise si action='save').",
+            },
+            "category": {
+                "type": "string",
+                "description": "Catégorie facultative (ex: 'preferences', 'projets', 'regles').",
+            },
         },
         ["action"],
     ),
@@ -199,30 +244,55 @@ TOOLS_SCHEMA = [
                 "enum": ["ingest", "search", "list", "delete"],
                 "description": "'ingest' pour indexer un fichier ou un dossier, 'search' pour interroger les documents indexés, 'list' pour voir les documents indexés, 'delete' pour en retirer un.",
             },
-            "path": {"type": "string", "description": "Chemin du fichier ou dossier à indexer (requis pour action='ingest'). Formats acceptés : .txt, .md, .csv, .json, .py, .pdf, .docx."},
-            "query": {"type": "string", "description": "La question ou les termes de recherche (requis pour action='search')."},
-            "doc_name": {"type": "string", "description": "Chemin exact du document à retirer de l'index, tel qu'affiché par action='list' (requis pour action='delete')."},
+            "path": {
+                "type": "string",
+                "description": "Chemin du fichier ou dossier à indexer (requis pour action='ingest'). Formats acceptés : .txt, .md, .csv, .json, .py, .pdf, .docx.",
+            },
+            "query": {
+                "type": "string",
+                "description": "La question ou les termes de recherche (requis pour action='search').",
+            },
+            "doc_name": {
+                "type": "string",
+                "description": "Chemin exact du document à retirer de l'index, tel qu'affiché par action='list' (requis pour action='delete').",
+            },
         },
         ["action"],
     ),
     _schema(
         "graph_search",
         "Interroge le graphe de connaissances (entités + relations extraites des documents indexés via rag_control) pour répondre à des questions RELATIONNELLES précises entre des éléments identifiés (ex: 'qui a recommandé quoi à qui', 'quel projet dépend de quel outil', 'où habite X'). Complète rag_search : préfère rag_control(search) pour retrouver un passage de texte par similarité, et graph_search pour une relation précise entre entités déjà connues du graphe.",
-        {"query": {"type": "string", "description": "La question relationnelle posée en langage naturel (ex: 'qui a recommandé le restaurant à Adam ?')."}},
+        {
+            "query": {
+                "type": "string",
+                "description": "La question relationnelle posée en langage naturel (ex: 'qui a recommandé le restaurant à Adam ?').",
+            }
+        },
         ["query"],
     ),
     _schema(
         "graph_backfill",
         "Force l'extraction immédiate des entités/relations pour les documents déjà indexés via rag_control mais pas encore intégrés au graphe de connaissances (normalement fait automatiquement par petits lots à chaque graph_search, mais utile après une grosse indexation pour ne pas attendre).",
-        {"limit": {"type": "integer", "description": "Nombre maximum de chunks à traiter en une fois (par défaut 200)."}},
+        {
+            "limit": {
+                "type": "integer",
+                "description": "Nombre maximum de chunks à traiter en une fois (par défaut 200).",
+            }
+        },
         [],
     ),
     _schema(
         "analyze_image",
         "Analyse visuellement une image locale ou une capture d'écran (extraire du texte, lire des erreurs, décrire un schéma, identifier des éléments à l'écran).",
         {
-            "image_path": {"type": "string", "description": "Le chemin du fichier image à analyser (ex: '~/Images/screenshot.png')."},
-            "prompt": {"type": "string", "description": "Consigne précise sur ce que l'agent doit observer ou chercher dans l'image (ex: 'Que dit ce message d'erreur ?')."},
+            "image_path": {
+                "type": "string",
+                "description": "Le chemin du fichier image à analyser (ex: '~/Images/screenshot.png').",
+            },
+            "prompt": {
+                "type": "string",
+                "description": "Consigne précise sur ce que l'agent doit observer ou chercher dans l'image (ex: 'Que dit ce message d'erreur ?').",
+            },
         },
         ["image_path"],
     ),
@@ -230,9 +300,18 @@ TOOLS_SCHEMA = [
         "create_custom_tool",
         "Permet d'écrire et sauvegarder un nouvel outil Python réutilisable lorsque la demande nécessite une fonctionnalité inexistante.",
         {
-            "tool_name": {"type": "string", "description": "Nom de la fonction Python en snake_case (ex: 'fetch_crypto_price')."},
-            "python_code": {"type": "string", "description": "Code Python autonome complet définissant la fonction."},
-            "description": {"type": "string", "description": "Explication de ce que fait la fonction et ses paramètres."},
+            "tool_name": {
+                "type": "string",
+                "description": "Nom de la fonction Python en snake_case (ex: 'fetch_crypto_price').",
+            },
+            "python_code": {
+                "type": "string",
+                "description": "Code Python autonome complet définissant la fonction.",
+            },
+            "description": {
+                "type": "string",
+                "description": "Explication de ce que fait la fonction et ses paramètres.",
+            },
         },
         ["tool_name", "python_code", "description"],
     ),
@@ -240,8 +319,14 @@ TOOLS_SCHEMA = [
         "get_joke",
         "Raconte une blague amusante pour développeurs ou geeks.",
         {
-            "language": {"type": "string", "description": "Langue de la blague ('fr', 'en', 'es', 'de'). Par défaut 'fr'."},
-            "category": {"type": "string", "description": "Catégorie de blague ('neutral', 'chuck', 'all'). Par défaut 'neutral'."},
+            "language": {
+                "type": "string",
+                "description": "Langue de la blague ('fr', 'en', 'es', 'de'). Par défaut 'fr'.",
+            },
+            "category": {
+                "type": "string",
+                "description": "Catégorie de blague ('neutral', 'chuck', 'all'). Par défaut 'neutral'.",
+            },
         },
         [],
     ),
@@ -254,8 +339,14 @@ TOOLS_SCHEMA = [
                 "enum": ["play", "pause", "next", "previous", "rewind", "current", "volume"],
                 "description": "L'action Spotify à exécuter.",
             },
-            "query": {"type": "string", "description": "Le nom du morceau, de l'artiste ou de la playlist (pour action='play')."},
-            "volume": {"type": "integer", "description": "Le niveau de volume de 0 à 100 (pour action='volume')."},
+            "query": {
+                "type": "string",
+                "description": "Le nom du morceau, de l'artiste ou de la playlist (pour action='play').",
+            },
+            "volume": {
+                "type": "integer",
+                "description": "Le niveau de volume de 0 à 100 (pour action='volume').",
+            },
         },
         ["action"],
     ),
@@ -263,9 +354,16 @@ TOOLS_SCHEMA = [
         "manage_contacts",
         "Gère le carnet d'adresses : ajouter, chercher, lister ou supprimer des contacts (Nom -> Numéro).",
         {
-            "action": {"type": "string", "enum": ["add", "get", "list", "delete"], "description": "Action à effectuer sur les contacts."},
+            "action": {
+                "type": "string",
+                "enum": ["add", "get", "list", "delete"],
+                "description": "Action à effectuer sur les contacts.",
+            },
             "name": {"type": "string", "description": "Le nom du contact (ex: 'Adam', 'Maman')."},
-            "phone_number": {"type": "string", "description": "Numéro au format international commençant par '+' (ex: '+33612345678')."},
+            "phone_number": {
+                "type": "string",
+                "description": "Numéro au format international commençant par '+' (ex: '+33612345678').",
+            },
         },
         ["action"],
     ),
@@ -273,7 +371,10 @@ TOOLS_SCHEMA = [
         "send_whatsapp_message",
         "Envoie un message WhatsApp à un destinataire en utilisant soit son prénom/nom enregistrés, soit directement son numéro.",
         {
-            "recipient": {"type": "string", "description": "Nom du contact dans le carnet d'adresses (ex: 'Adam', 'Maman') OU numéro au format '+33...'."},
+            "recipient": {
+                "type": "string",
+                "description": "Nom du contact dans le carnet d'adresses (ex: 'Adam', 'Maman') OU numéro au format '+33...'.",
+            },
             "message": {"type": "string", "description": "Le texte du message à envoyer."},
         },
         ["recipient", "message"],
@@ -288,9 +389,18 @@ TOOLS_SCHEMA = [
                 "description": "'add' pour créer un rappel, 'list' pour voir les prochains rappels, 'delete' pour en supprimer un, 'due' pour voir ceux arrivés à échéance et pas encore annoncés.",
             },
             "message": {"type": "string", "description": "Le texte du rappel (requis pour action='add')."},
-            "due_at": {"type": "string", "description": "Date et heure d'échéance au format ISO (ex: '2026-08-20T09:00:00'), requis pour action='add'."},
-            "reminder_id": {"type": "integer", "description": "Identifiant du rappel à supprimer (requis pour action='delete', voir la liste via action='list')."},
-            "limit": {"type": "integer", "description": "Nombre de rappels à afficher pour action='list' (par défaut 10)."},
+            "due_at": {
+                "type": "string",
+                "description": "Date et heure d'échéance au format ISO (ex: '2026-08-20T09:00:00'), requis pour action='add'.",
+            },
+            "reminder_id": {
+                "type": "integer",
+                "description": "Identifiant du rappel à supprimer (requis pour action='delete', voir la liste via action='list').",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Nombre de rappels à afficher pour action='list' (par défaut 10).",
+            },
         },
         ["action"],
     ),
@@ -303,16 +413,31 @@ TOOLS_SCHEMA = [
                 "enum": ["add", "list", "cancel"],
                 "description": "'add' pour planifier une tâche, 'list' pour voir les tâches actives, 'cancel' pour en annuler une.",
             },
-            "instruction": {"type": "string", "description": "Ce que Monika doit faire, en langage naturel (ex: 'donne la météo de Paris', 'vérifie mes derniers e-mails'). Requis pour action='add'."},
+            "instruction": {
+                "type": "string",
+                "description": "Ce que Monika doit faire, en langage naturel (ex: 'donne la météo de Paris', 'vérifie mes derniers e-mails'). Requis pour action='add'.",
+            },
             "schedule_type": {
                 "type": "string",
                 "enum": ["once", "daily", "interval"],
                 "description": "'once' pour une seule fois (avec 'run_at'), 'daily' pour tous les jours (avec 'time_of_day'), 'interval' pour une boucle récurrente (avec 'interval_seconds'). Requis pour action='add'.",
             },
-            "run_at": {"type": "string", "description": "Date et heure ISO du déclenchement unique (ex: '2026-08-20T09:00:00'), requis si schedule_type='once'."},
-            "time_of_day": {"type": "string", "description": "Heure quotidienne de déclenchement au format 'HH:MM' (ex: '08:00'), requis si schedule_type='daily'."},
-            "interval_seconds": {"type": "integer", "description": "Période de répétition en secondes (ex: 3600 pour toutes les heures), requis si schedule_type='interval'."},
-            "task_id": {"type": "integer", "description": "Identifiant de la tâche à annuler (requis pour action='cancel', voir action='list')."},
+            "run_at": {
+                "type": "string",
+                "description": "Date et heure ISO du déclenchement unique (ex: '2026-08-20T09:00:00'), requis si schedule_type='once'.",
+            },
+            "time_of_day": {
+                "type": "string",
+                "description": "Heure quotidienne de déclenchement au format 'HH:MM' (ex: '08:00'), requis si schedule_type='daily'.",
+            },
+            "interval_seconds": {
+                "type": "integer",
+                "description": "Période de répétition en secondes (ex: 3600 pour toutes les heures), requis si schedule_type='interval'.",
+            },
+            "task_id": {
+                "type": "integer",
+                "description": "Identifiant de la tâche à annuler (requis pour action='cancel', voir action='list').",
+            },
         },
         ["action"],
     ),
@@ -320,8 +445,7 @@ TOOLS_SCHEMA = [
 
 
 def _generate_schema_from_func(func, name: str, description: str) -> dict:
-    """Génère un schéma JSON à partir de la signature d'une fonction (utilisé
-    pour les outils custom, qui n'ont pas de schéma explicite)."""
+    """Génère un schéma JSON à partir de la signature d'une fonction (utilisé pour les outils custom, qui n'ont pas de schéma explicite)."""
     sig = inspect.signature(func)
     type_map = {int: "integer", float: "number", bool: "boolean"}
     properties = {}
@@ -339,8 +463,7 @@ def _generate_schema_from_func(func, name: str, description: str) -> dict:
 
 
 def sync_custom_tools(target_schema_list: list) -> None:
-    """Charge les outils custom de tools/custom/ dans AVAILABLE_TOOLS et
-    ajoute leur schéma JSON à `target_schema_list`."""
+    """Charge les outils custom de tools/custom/ dans AVAILABLE_TOOLS et ajoute leur schéma JSON à `target_schema_list`."""
     custom_dir = os.path.join(os.path.dirname(__file__), "custom")
     if not os.path.exists(custom_dir):
         return

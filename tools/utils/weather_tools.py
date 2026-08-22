@@ -1,8 +1,4 @@
-"""
-tools/utils/weather_tools.py
-------------------------------
-Récupération de la météo via l'API gratuite Open-Meteo.
-"""
+"""Récupération de la météo via l'API gratuite Open-Meteo."""
 
 import requests
 
@@ -34,7 +30,9 @@ WMO_CODES = {
 def get_weather(city: str) -> str:
     """Récupère la météo actuelle pour une ville donnée via Open-Meteo."""
     try:
-        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=fr&format=json"
+        geo_url = (
+            f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=fr&format=json"
+        )
         geo_response = requests.get(geo_url, timeout=5)
         geo_data = geo_response.json()
 

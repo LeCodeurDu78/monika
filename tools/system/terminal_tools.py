@@ -4,6 +4,7 @@ from pathlib import Path
 
 FORBIDDEN_COMMANDS = ["rm -rf /", "mkfs", "dd ", ":(){ :|:& };:"]
 
+
 def run_script(command: str, workdir: str = None) -> str:
     """Exécute une commande dans le terminal local."""
     try:
@@ -17,12 +18,7 @@ def run_script(command: str, workdir: str = None) -> str:
             return f"Erreur : Le répertoire de travail '{target_dir}' n'existe pas."
 
         result = subprocess.run(
-            command,
-            shell=True,
-            cwd=str(target_dir),
-            capture_output=True,
-            text=True,
-            timeout=30
+            command, shell=True, cwd=str(target_dir), capture_output=True, text=True, timeout=30
         )
 
         output = []
@@ -32,7 +28,9 @@ def run_script(command: str, workdir: str = None) -> str:
             output.append(f"--- STDERR ---\n{result.stderr.strip()}")
 
         if not output:
-            return f"Commande exécutée avec succès (Code de sortie : {result.returncode}, aucune sortie texte)."
+            return (
+                f"Commande exécutée avec succès (Code de sortie : {result.returncode}, aucune sortie texte)."
+            )
 
         return f"Code de sortie : {result.returncode}\n" + "\n".join(output)
 

@@ -1,9 +1,4 @@
-"""
-tools/utils/search_tools.py
-------------------------------
-Recherche en ligne : Wikipédia (culture générale, définitions) et
-DuckDuckGo (actualité, recherches Web générales).
-"""
+"""Recherche en ligne : Wikipédia (culture générale, définitions) et DuckDuckGo (actualité, recherches Web générales)."""
 
 import wikipedia
 from ddgs import DDGS

@@ -1,8 +1,4 @@
-"""
-tools/social/contact_tools.py
-------------------------------
-Gestionnaire de carnet d'adresses pour Monika.
-"""
+"""Gestionnaire de carnet d'adresses pour Monika."""
 
 import os
 import json
@@ -27,13 +23,7 @@ def _save_contacts(contacts: dict):
 
 
 def manage_contacts(action: str, name: str = "", phone_number: str = "") -> str:
-    """Gère le carnet d'adresses de Monika.
-
-    Args:
-        action: 'add' (ajouter/modifier), 'get' (chercher), 'list' (tout afficher), 'delete' (supprimer).
-        name: Le nom du contact (ex: 'Adam', 'Maman', 'Paul').
-        phone_number: Le numéro au format international (ex: '+33612345678').
-    """
+    """Gère le carnet d'adresses de Monika."""
     contacts = _load_contacts()
     clean_name = name.strip().lower()
 
@@ -45,10 +35,7 @@ def manage_contacts(action: str, name: str = "", phone_number: str = "") -> str:
         if not num.startswith("+"):
             return "❌ Le numéro doit commencer par '+' et inclure l'indicatif (ex: '+33612345678')."
 
-        contacts[clean_name] = {
-            "display_name": name.strip(),
-            "phone": num
-        }
+        contacts[clean_name] = {"display_name": name.strip(), "phone": num}
         _save_contacts(contacts)
         return f"✅ Contact '{name.strip()}' enregistré avec le numéro {num} !"
 

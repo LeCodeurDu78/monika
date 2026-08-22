@@ -1,8 +1,4 @@
-"""
-tools/social/whatsapp_tools.py
--------------------------------
-Envoi de messages WhatsApp fiables via Playwright.
-"""
+"""Envoi de messages WhatsApp fiables via Playwright."""
 
 from urllib.parse import quote
 from config import APP_DIR
@@ -26,9 +22,7 @@ def send_whatsapp_message(recipient: str, message: str) -> str:
 
         with sync_playwright() as p:
             context = p.firefox.launch_persistent_context(
-                user_data_dir=SESSION_DIR,
-                headless=True,
-                args=["--start-maximized"]
+                user_data_dir=SESSION_DIR, headless=True, args=["--start-maximized"]
             )
             page = context.new_page()
             page.goto(url)
@@ -37,7 +31,7 @@ def send_whatsapp_message(recipient: str, message: str) -> str:
             send_button_selector = 'button[aria-label="Envoyer"], button[aria-label="Send"]'
             page.wait_for_selector(send_button_selector, timeout=30000)
             page.click(send_button_selector)
-            page.wait_for_timeout(2000)  # laisse le temps au paquet réseau de partir
+            page.wait_for_timeout(2000)
             context.close()
 
         return f"✅ Message WhatsApp envoyé avec succès à {target} ({phone_number}) !"

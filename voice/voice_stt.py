@@ -1,8 +1,4 @@
-"""
-voice_stt.py
-------------
-Reconnaissance vocale locale via faster-whisper (CTranslate2).
-"""
+"""Reconnaissance vocale locale via faster-whisper (CTranslate2)."""
 
 import numpy as np
 from faster_whisper import WhisperModel
@@ -14,10 +10,7 @@ _model = None
 def _get_model() -> WhisperModel:
     global _model
     if _model is None:
-        print(
-            f"Chargement du modèle Whisper '{STT_MODEL_SIZE}' "
-            f"({STT_DEVICE}/{STT_COMPUTE_TYPE})..."
-        )
+        print(f"Chargement du modèle Whisper '{STT_MODEL_SIZE}' " f"({STT_DEVICE}/{STT_COMPUTE_TYPE})...")
         _model = WhisperModel(STT_MODEL_SIZE, device=STT_DEVICE, compute_type=STT_COMPUTE_TYPE)
     return _model
 

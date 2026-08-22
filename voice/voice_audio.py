@@ -1,8 +1,4 @@
-"""
-voice_audio.py
---------------
-Capture micro avec détection de fin de phrase (VAD) et lecture audio.
-"""
+"""Capture micro avec détection de fin de phrase (VAD) et lecture audio."""
 
 import sys
 import numpy as np
@@ -32,9 +28,7 @@ def record_until_silence() -> np.ndarray:
 
     print("Je t'écoute... (parle, je m'arrête tout seul après le silence)")
 
-    with sd.InputStream(
-        samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=FRAME_SAMPLES
-    ) as stream:
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=FRAME_SAMPLES) as stream:
         for _ in range(max_frames):
             block, overflowed = stream.read(FRAME_SAMPLES)
             if overflowed:

@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
+
 def open_application(app_name: str) -> str:
     """Ouvre une application de manière détachée du terminal."""
     try:
@@ -17,17 +18,18 @@ def open_application(app_name: str) -> str:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
-                start_new_session=True
+                start_new_session=True,
             )
         return f"Application '{app_name}' lancée avec succès."
     except Exception as e:
         return f"Erreur lors du lancement de {app_name} : {str(e)}"
 
+
 def system_control(action: str, value: int = 5, filename: str = None) -> str:
     """Gère le volume, les médias et les captures d'écran de façon cross-platform."""
     try:
         is_windows = platform.system() == "Windows"
-        
+
         if action in ("volume_up", "volume_down"):
             if not is_windows:
                 cmd = ["pamixer", "-i" if action == "volume_up" else "-d", str(value)]
@@ -51,6 +53,7 @@ def system_control(action: str, value: int = 5, filename: str = None) -> str:
 
             if is_windows:
                 from PIL import ImageGrab
+
                 img = ImageGrab.grab()
                 img.save(path)
             else:

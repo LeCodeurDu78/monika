@@ -1,8 +1,4 @@
-"""
-tools/spotify_tools.py
-----------------------
-Contrôle Spotify robuste via playerctl
-"""
+"""Contrôle Spotify robuste via playerctl"""
 
 import subprocess
 
@@ -19,23 +15,21 @@ def _run_playerctl(args: list) -> tuple[bool, str]:
 
 def spotify_control(action: str, query: str = "", volume: int = 50) -> str:
     """Contrôle la lecture de musique Spotify (compatible Spotify Premium et Gratuit via playerctl)."""
-    # 1. Action Pause
+
     if action == "pause":
         success, _ = _run_playerctl(["pause"])
         if success:
             return "⏸️ Musique mise en pause (via playerctl)."
         return "❌ Impossible de mettre en pause : vérifiez que Spotify est ouvert sur votre PC."
 
-    # 2. Action Play
     elif action == "play":
         success, _ = _run_playerctl(["play"])
         if success:
             return "▶️ Lecture Spotify lancée."
         return "❌ Impossible de relancer la lecture."
 
-    # 3. Action Rewind (Remettre la piste au début 0s)
     elif action == "rewind":
-        # Tentative via position 0
+
         ok_pos, _ = _run_playerctl(["position", "0"])
 
         if not ok_pos:
@@ -44,7 +38,6 @@ def spotify_control(action: str, query: str = "", volume: int = 50) -> str:
         _run_playerctl(["play"])
         return "⏮️ Morceau remis au début !"
 
-    # 4. Action Suivant / Précédent
     elif action == "next":
         _run_playerctl(["next"])
         return "⏭️ Morceau suivant."
@@ -53,7 +46,6 @@ def spotify_control(action: str, query: str = "", volume: int = 50) -> str:
         _run_playerctl(["previous"])
         return "⏮️ Morceau précédent."
 
-    # 5. Morceau en cours
     elif action == "current":
         ok_art, artist = _run_playerctl(["metadata", "artist"])
         ok_title, title = _run_playerctl(["metadata", "title"])
@@ -61,7 +53,6 @@ def spotify_control(action: str, query: str = "", volume: int = 50) -> str:
             return f"🎵 En cours : '{title}' par {artist}"
         return "Aucune musique active sur Spotify."
 
-    # 6. Réglage Volume
     elif action == "volume":
         vol_float = max(0.0, min(1.0, volume / 100.0))
         ok, _ = _run_playerctl(["volume", str(vol_float)])

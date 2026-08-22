@@ -1,8 +1,4 @@
-"""
-voice_tts.py
-------------
-Synthèse vocale locale via XTTS v2 (Coqui TTS)
-"""
+"""Synthèse vocale locale via XTTS v2 (Coqui TTS)"""
 
 import re
 import numpy as np

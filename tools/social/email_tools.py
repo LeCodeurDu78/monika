@@ -1,8 +1,4 @@
-"""
-tools/social/email_tools.py
-----------------------------
-Lecture et envoi d'e-mails via IMAP et SMTP.
-"""
+"""Lecture et envoi d'e-mails via IMAP et SMTP."""
 
 import imaplib
 import smtplib
@@ -13,7 +9,9 @@ from email.message import EmailMessage
 from config import EMAIL_USER, EMAIL_PASS, IMAP_SERVER, SMTP_SERVER
 
 
-def email_control(action: str, recipient: str = None, subject: str = None, body: str = None, limit: int = 5) -> str:
+def email_control(
+    action: str, recipient: str = None, subject: str = None, body: str = None, limit: int = 5
+) -> str:
     """Gère la lecture et l'envoi d'e-mails via IMAP et SMTP."""
     user = EMAIL_USER
     password = EMAIL_PASS
@@ -33,7 +31,7 @@ def email_control(action: str, recipient: str = None, subject: str = None, body:
             if not email_ids:
                 return "Aucun e-mail trouvé dans la boîte de réception."
 
-            latest_ids = email_ids[-int(limit):]
+            latest_ids = email_ids[-int(limit) :]
             results = []
 
             for e_id in reversed(latest_ids):
