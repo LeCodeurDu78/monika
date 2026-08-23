@@ -1,9 +1,4 @@
-"""
-tools/file_tools.py
----------------------
-Outil de gestion et d'organisation des fichiers locaux
-(listage, création de dossier, déplacement).
-"""
+"""Gestion et organisation des fichiers locaux (listage, création de dossier, déplacement)."""
 
 import os
 
@@ -11,11 +6,11 @@ import os
 def manage_files(action: str, path: str, target_folder: str = "") -> str:
     """Gère et organise les fichiers locaux."""
     try:
-        path = os.path.expanduser(path)  # Gère les chemins comme ~/Documents
+        path = os.path.expanduser(path)
 
         if action == "list":
             files = os.listdir(path)
-            return f"Contenu de '{path}' : {', '.join(files[:20])}"  # Limite à 20
+            return f"Contenu de '{path}' : {', '.join(files[:20])}"
 
         elif action == "create_dir":
             os.makedirs(path, exist_ok=True)

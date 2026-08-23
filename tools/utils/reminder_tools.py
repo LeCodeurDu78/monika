@@ -1,31 +1,14 @@
-"""
-tools/utils/reminder_tools.py
-------------------------------
-Gestion des rappels/tâches avec échéance pour Monika, stockés en SQLite.
-
-Trois usages :
-1. Le modèle peut créer, lister ou supprimer des rappels via function calling
-   (actions 'add', 'list', 'delete').
-2. Le modèle peut aussi vérifier explicitement s'il y a des rappels en
-   attente (action 'due'), par exemple si l'utilisateur demande
-   "j'ai des rappels ?".
-3. agent.py utilise la même action 'due' en tâche de fond (voir
-   `_start_reminder_watcher`) pour annoncer proactivement un rappel dès son
-   échéance, sans que l'utilisateur ait à demander quoi que ce soit.
-
-Un rappel n'est annoncé (via 'due') qu'une seule fois : dès qu'il est
-renvoyé par 'due', il est marqué 'notified' pour ne pas être répété en boucle.
-"""
+"""Rappels avec échéance pour Monika, stockés en SQLite."""
 
 import os
 import sqlite3
 from datetime import datetime
+from config import APP_DIR
 
-DB_PATH = os.path.expanduser("~/.config/monika/reminders.db")
+DB_PATH = str(APP_DIR / "reminders.db")
 
 
 def _init_db() -> None:
-    """Initialise la table des rappels si elle n'existe pas."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -52,17 +35,7 @@ def reminder_control(
     reminder_id: int = 0,
     limit: int = 10,
 ) -> str:
-    """Gère les rappels avec échéance de Monika.
-
-    Actions disponibles :
-    - 'add'    : Crée un rappel (requiert 'message' et 'due_at' au format ISO,
-                 ex: '2026-08-20T09:00:00').
-    - 'list'   : Liste les prochains rappels à venir (non expirés).
-    - 'delete' : Supprime un rappel par son identifiant (requiert 'reminder_id',
-                 visible via 'list').
-    - 'due'    : Renvoie les rappels arrivés à échéance et pas encore annoncés,
-                 puis les marque comme annoncés. Utilisé aussi en tâche de fond.
-    """
+    """Gère les rappels avec échéance de Monika."""
     _init_db()
 
     try:
@@ -71,7 +44,9 @@ def reminder_control(
 
             if action == "add":
                 if not message.strip() or not due_at.strip():
-                    return "Erreur : 'message' et 'due_at' (format ISO, ex: '2026-08-20T09:00:00') sont requis."
+                    return (
+                        "Erreur : 'message' et 'due_at' (format ISO, ex: '2026-08-20T09:00:00') sont requis."
+                    )
                 try:
                     parsed = _parse_due_at(due_at)
                 except ValueError:
@@ -82,7 +57,9 @@ def reminder_control(
                     (message.strip(), parsed.isoformat()),
                 )
                 conn.commit()
-                return f"⏰ Rappel créé : « {message.strip()} » pour le {parsed.strftime('%d/%m/%Y à %H:%M')}."
+                return (
+                    f"⏰ Rappel créé : « {message.strip()} » pour le {parsed.strftime('%d/%m/%Y à %H:%M')}."
+                )
 
             elif action == "list":
                 cursor.execute(
@@ -115,7 +92,7 @@ def reminder_control(
                 )
                 rows = cursor.fetchall()
                 if not rows:
-                    return ""  # chaîne vide = rien à annoncer, utilisé tel quel par le watcher en tâche de fond
+                    return ""
 
                 ids = [row_id for row_id, _ in rows]
                 placeholders = ",".join("?" * len(ids))

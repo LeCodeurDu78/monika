@@ -1,12 +1,7 @@
-"""
-tools/weather_tools.py
------------------------
-Outil de récupération de la météo via l'API gratuite Open-Meteo.
-"""
+"""Récupération de la météo via l'API gratuite Open-Meteo."""
 
 import requests
 
-# Dictionnaire de correspondance des codes météo WMO vers du français clair
 WMO_CODES = {
     0: "Ciel dégagé",
     1: "Principalement dégagé",
@@ -35,8 +30,9 @@ WMO_CODES = {
 def get_weather(city: str) -> str:
     """Récupère la météo actuelle pour une ville donnée via Open-Meteo."""
     try:
-        # 1. Obtenir les coordonnées GPS de la ville via l'API de géocodage Open-Meteo
-        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=fr&format=json"
+        geo_url = (
+            f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=fr&format=json"
+        )
         geo_response = requests.get(geo_url, timeout=5)
         geo_data = geo_response.json()
 
@@ -47,7 +43,6 @@ def get_weather(city: str) -> str:
         lat, lon = location["latitude"], location["longitude"]
         city_name = location.get("name", city)
 
-        # 2. Obtenir les données météo actuelles
         weather_url = (
             f"https://api.open-meteo.com/v1/forecast?"
             f"latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weather_code"

@@ -1,33 +1,11 @@
-"""
-tools/system/scheduler_tools.py
---------------------------------
-Planification de tâches en arrière-plan pour Monika — l'équivalent d'un cron
-personnel.
-
-Différence avec reminder_tools.py : un rappel se contente d'ANNONCER un
-message ("rappelle-moi de..."). Une tâche planifiée ici déclenche une
-EXÉCUTION AUTONOME par l'agent lui-même : l'instruction est envoyée au
-modèle, qui peut alors appeler n'importe quel autre outil (météo, e-mails,
-recherche web, mémoire...) pour l'accomplir, sans intervention de
-l'utilisateur.
-
-Trois types de récurrence :
-- 'once'     : une seule fois, à une date/heure précise ('run_at').
-- 'daily'    : tous les jours à la même heure ('time_of_day', format 'HH:MM').
-- 'interval' : en boucle toutes les N secondes ('interval_seconds').
-
-Ce module gère uniquement le stockage (CRUD) des tâches planifiées.
-L'exécution réelle (appel du modèle + des outils) est déclenchée par le
-thread de fond démarré dans agent.py (`_start_scheduler_watcher`), qui est
-seul à connaître `process_user_message` — cela évite tout import circulaire
-et garde ce module simple à tester isolément.
-"""
+"""Planification de tâches en arrière-plan pour Monika — l'équivalent d'un cron personnel."""
 
 import os
 import sqlite3
 from datetime import datetime, timedelta
+from config import APP_DIR
 
-DB_PATH = os.path.expanduser("~/.config/monika/scheduler.db")
+DB_PATH = str(APP_DIR / "scheduler.db")
 
 VALID_SCHEDULE_TYPES = ("once", "daily", "interval")
 SCHEDULE_LABELS = {"once": "une fois", "daily": "tous les jours", "interval": "en boucle"}
@@ -80,14 +58,7 @@ def scheduler_control(
     interval_seconds: int = 0,
     task_id: int = 0,
 ) -> str:
-    """Planifie, liste ou annule des tâches exécutées de façon autonome par Monika.
-
-    Actions disponibles :
-    - 'add'    : Planifie une tâche (requiert 'instruction' et 'schedule_type',
-                 plus 'run_at'/'time_of_day'/'interval_seconds' selon le type).
-    - 'list'   : Liste les tâches planifiées actives et leur prochain déclenchement.
-    - 'cancel' : Annule une tâche planifiée (requiert 'task_id', voir action='list').
-    """
+    """Planifie, liste ou annule des tâches exécutées de façon autonome par Monika."""
     _init_db()
 
     try:
@@ -113,8 +84,10 @@ def scheduler_control(
                     try:
                         next_run = _next_daily_run(time_of_day.strip())
                     except ValueError:
-                        return f"Erreur : '{time_of_day}' n'est pas une heure valide (format attendu : 'HH:MM')."
-                else:  # interval
+                        return (
+                            f"Erreur : '{time_of_day}' n'est pas une heure valide (format attendu : 'HH:MM')."
+                        )
+                else:
                     if interval_seconds <= 0:
                         return "Erreur : 'interval_seconds' doit être un entier positif pour schedule_type='interval'."
                     next_run = datetime.now() + timedelta(seconds=interval_seconds)
@@ -168,12 +141,7 @@ def scheduler_control(
 
 
 def pop_due_tasks() -> list[tuple[int, str]]:
-    """Récupère les tâches actives arrivées à échéance et avance leur prochaine
-    exécution ('daily'/'interval') ou les désactive ('once').
-
-    Usage interne uniquement : appelé par le thread de fond de agent.py, jamais
-    exposé au modèle via function calling (contrairement à 'add'/'list'/'cancel').
-    """
+    """Récupère les tâches actives arrivées à échéance et avance leur prochaine exécution ('daily'/'interval') ou les désactive ('once')."""
     _init_db()
     due: list[tuple[int, str]] = []
 
@@ -193,11 +161,15 @@ def pop_due_tasks() -> list[tuple[int, str]]:
                 cursor.execute("UPDATE scheduled_tasks SET active = 0 WHERE id = ?", (task_id,))
             elif schedule_type == "daily":
                 new_next = _next_daily_run(time_of_day, after=datetime.fromisoformat(next_run))
-                cursor.execute("UPDATE scheduled_tasks SET next_run = ? WHERE id = ?", (new_next.isoformat(), task_id))
+                cursor.execute(
+                    "UPDATE scheduled_tasks SET next_run = ? WHERE id = ?", (new_next.isoformat(), task_id)
+                )
             elif schedule_type == "interval":
-                # Repart de "maintenant" plutôt que d'accumuler du retard si Monika était éteinte.
+
                 new_next = datetime.now() + timedelta(seconds=interval_seconds)
-                cursor.execute("UPDATE scheduled_tasks SET next_run = ? WHERE id = ?", (new_next.isoformat(), task_id))
+                cursor.execute(
+                    "UPDATE scheduled_tasks SET next_run = ? WHERE id = ?", (new_next.isoformat(), task_id)
+                )
 
         conn.commit()
 

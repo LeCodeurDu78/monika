@@ -1,14 +1,17 @@
+"""Consultation et création d'événements Google Calendar."""
+
 import os
 import datetime
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from config import APP_DIR
 
-# Emplacement des jetons d'accès
-CREDENTIALS_FILE = os.path.expanduser("~/.config/monika/credentials_calendar.json")
-TOKEN_FILE = os.path.expanduser("~/.config/monika/token.json")
+CREDENTIALS_FILE = str(APP_DIR / "credentials_calendar.json")
+TOKEN_FILE = str(APP_DIR / "token.json")
 SCOPES = ['https://www.googleapis.com/auth/calendar']
+
 
 def _get_calendar_service():
     """Gère l'authentification OAuth2 auprès de l'API Google Calendar."""
@@ -30,19 +33,27 @@ def _get_calendar_service():
             token.write(creds.to_json())
     return build('calendar', 'v3', credentials=creds)
 
-def calendar_control(action: str, summary: str = None, start_time: str = None, end_time: str = None, limit: int = 5) -> str:
+
+def calendar_control(
+    action: str, summary: str = None, start_time: str = None, end_time: str = None, limit: int = 5
+) -> str:
     """Gère la consultation et l'ajout d'événements dans Google Calendar."""
     try:
         service = _get_calendar_service()
 
-        # ACTION 1 : LISTER LES PROCHAINS ÉVÉNEMENTS
         if action == "list":
             now = datetime.datetime.utcnow().isoformat() + 'Z'
-            events_result = service.events().list(
-                calendarId='primary', timeMin=now,
-                maxResults=limit, singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            events_result = (
+                service.events()
+                .list(
+                    calendarId='primary',
+                    timeMin=now,
+                    maxResults=limit,
+                    singleEvents=True,
+                    orderBy='startTime',
+                )
+                .execute()
+            )
             events = events_result.get('items', [])
 
             if not events:
@@ -56,7 +67,6 @@ def calendar_control(action: str, summary: str = None, start_time: str = None, e
 
             return "Prochains événements Google Calendar :\n" + "\n".join(formatted)
 
-        # ACTION 2 : AJOUTER UN ÉVÉNEMENT
         elif action == "add":
             if not summary or not start_time or not end_time:
                 return "Erreur : 'summary', 'start_time' et 'end_time' (format ISO: YYYY-MM-DDTHH:MM:SS) sont requis."

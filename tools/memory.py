@@ -1,40 +1,4 @@
-"""
-tools/memory.py
-----------------
-Gestion de la mémoire persistante à long terme pour Monika (SQLite), et
-backend d'embeddings 100% local basé sur BGE-M3 (BAAI/bge-m3) utilisé pour la
-recherche sémantique.
-
---- Embeddings locaux (BGE-M3) ---
-BGE-M3 est un modèle multilingue open-source qui tourne directement sur la
-machine de l'utilisateur via `sentence-transformers` : plus besoin d'un
-serveur distant (LM Studio, API cloud...) pour vectoriser du texte. Ce fichier
-expose aussi les fonctions embed_text/embed_texts/embedding_dimension/warmup,
-réutilisées par tools/utils/rag_tools.py pour le RAG.
-
-Pourquoi BGE-M3 : multilingue (100+ langues, bon en français), pas besoin de
-préfixe d'instruction spécial sur la requête, bonnes performances de
-recherche sémantique pour une taille raisonnable (~560M paramètres, ~2.2 Go).
-
-Chargement : le modèle est initialisé une seule fois (singleton protégé par
-verrou) au premier appel (ou dès le démarrage de Monika via warmup(), voir
-agent.py), puis réutilisé pour tous les appels suivants.
-
---- Mémoire (memory_control) ---
-La recherche est sémantique : chaque information enregistrée est vectorisée
-avec BGE-M3, et une recherche compare le sens de la requête aux souvenirs
-stockés plutôt qu'un simple mot-clé exact. Exemple concret : chercher
-"éditeur de code" retrouvera un souvenir enregistré sous la clé "outil_dev"
-avec la valeur "VS Code", ce qu'un LIKE SQL ne pouvait pas faire.
-
-Robustesse : si le modèle d'embeddings local n'est pas disponible (dépendance
-manquante, échec de chargement...), les fonctions d'embedding renvoient None
-et la mémoire retombe automatiquement sur une recherche par mot-clé (LIKE).
-
-Migration automatique : si le modèle d'embeddings change (dimension de
-vecteur différente), les entrées "périmées" sont détectées via leur taille en
-octets et automatiquement revectorisées par le backfill, sans action requise.
-"""
+"""Mémoire persistante long terme pour Monika (SQLite) et backend d'embeddings 100% local basé sur BGE-M3 (BAAI/bge-m3, multilingue), utilisé pour la recherche..."""
 
 import os
 import sqlite3
@@ -43,27 +7,17 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-from config import LOCAL_EMBEDDING_MODEL_NAME, LOCAL_EMBEDDING_DEVICE
+from config import APP_DIR, LOCAL_EMBEDDING_MODEL_NAME, LOCAL_EMBEDDING_DEVICE
 
-DB_PATH = os.path.expanduser("~/.config/monika/memory.db")
+DB_PATH = str(APP_DIR / "memory.db")
 
-# Nombre max de résultats sémantiques renvoyés, et seuil de similarité
-# cosinus en dessous duquel un résultat est jugé trop peu pertinent pour
-# être montré (évite de renvoyer du bruit sur une base volumineuse).
+
 SEMANTIC_TOP_K = 5
 SEMANTIC_MIN_SIMILARITY = 0.35
 
-# Nombre max de souvenirs "rattrapés" (backfill) en une seule recherche,
-# pour les entrées enregistrées avant l'activation de cette fonctionnalité,
-# pendant une panne du modèle d'embeddings, ou avec un ancien modèle dont
-# la dimension de vecteur ne correspond plus au modèle actuel.
+
 BACKFILL_BATCH_SIZE = 25
 
-
-# ==========================================================================
-# Embeddings locaux (BGE-M3) — voir aussi tools/utils/rag_tools.py qui
-# importe embed_text / embed_texts / embedding_dimension depuis ce module.
-# ==========================================================================
 
 _model = None
 _model_lock = threading.Lock()
@@ -71,23 +25,19 @@ _load_failed = False
 
 
 def resolve_device() -> str:
-    """Détermine le device qui sera utilisé pour l'inférence : valeur
-    explicite de config.py/.env si fournie, sinon auto-détection (GPU CUDA
-    si disponible, sinon CPU). Exposé publiquement pour diagnostic
-    (voir scripts/setup_bge_m3.py)."""
+    """Device utilisé pour l'inférence : valeur explicite de config.py/.env, sinon auto-détection (CUDA si disponible, sinon CPU)."""
     if LOCAL_EMBEDDING_DEVICE:
         return LOCAL_EMBEDDING_DEVICE
     try:
         import torch
+
         return "cuda" if torch.cuda.is_available() else "cpu"
     except ImportError:
         return "cpu"
 
 
 def _get_model_dimension(model) -> int:
-    """Récupère la dimension des embeddings du modèle, compatible avec les
-    anciennes et nouvelles versions de sentence-transformers (la méthode a
-    été renommée get_sentence_embedding_dimension -> get_embedding_dimension)."""
+    """Dimension des embeddings, compatible anciennes/nouvelles versions de sentence-transformers (méthode renommée get_sentence_embedding_dimension ->..."""
     if hasattr(model, "get_embedding_dimension"):
         return model.get_embedding_dimension()
     return model.get_sentence_embedding_dimension()
@@ -101,7 +51,7 @@ def _load_model():
         return _model
 
     with _model_lock:
-        if _model is not None or _load_failed:  # revérifié après acquisition du verrou
+        if _model is not None or _load_failed:
             return _model
 
         try:
@@ -117,7 +67,9 @@ def _load_model():
 
         device = resolve_device()
         try:
-            print(f"⏳ [Embeddings locaux] Chargement de '{LOCAL_EMBEDDING_MODEL_NAME}' sur '{device}' (une seule fois, peut être long au premier lancement)...")
+            print(
+                f"⏳ [Embeddings locaux] Chargement de '{LOCAL_EMBEDDING_MODEL_NAME}' sur '{device}' (une seule fois, peut être long au premier lancement)..."
+            )
             _model = SentenceTransformer(LOCAL_EMBEDDING_MODEL_NAME, device=device)
             print(f"✅ [Embeddings locaux] Modèle chargé (dimension {_get_model_dimension(_model)}).")
         except Exception as e:
@@ -129,8 +81,7 @@ def _load_model():
 
 
 def embedding_dimension() -> Optional[int]:
-    """Dimension des vecteurs produits par le modèle actuellement chargé, ou
-    None si le modèle est indisponible."""
+    """Dimension des vecteurs du modèle actuellement chargé, ou None si indisponible."""
     model = _load_model()
     if model is None:
         return None
@@ -156,10 +107,7 @@ def embed_text(text: str) -> Optional[np.ndarray]:
 
 
 def embed_texts(texts: Sequence[str]) -> Optional[np.ndarray]:
-    """Vectorise plusieurs textes en un seul batch (bien plus rapide que
-    d'appeler embed_text() en boucle lors d'une indexation massive de
-    documents). Renvoie un tableau (n, dim), ou None si le modèle est
-    indisponible. Les entrées vides sont silencieusement ignorées."""
+    """Vectorise plusieurs textes en un seul batch (plus rapide qu'appeler embed_text() en boucle)."""
     cleaned = [t.strip() for t in texts if t and t.strip()]
     if not cleaned:
         return np.empty((0,), dtype=np.float32)
@@ -177,30 +125,34 @@ def embed_texts(texts: Sequence[str]) -> Optional[np.ndarray]:
 
 
 def is_available() -> bool:
-    """Indique si le backend d'embeddings locaux est utilisable (déjà chargé,
-    ou chargeable). Utile pour afficher un statut sans déclencher un
-    chargement inutile si on veut juste vérifier."""
+    """Indique si le backend d'embeddings locaux est utilisable, sans forcer un chargement inutile."""
     return _load_model() is not None
 
 
 def warmup() -> bool:
-    """Force le chargement du modèle immédiatement (au lieu d'attendre le
-    premier appel à memory_control/rag_control). Utilisé au démarrage de
-    Monika (voir agent.py) pour que le modèle soit déjà prêt en mémoire/VRAM
-    avant la première question de l'utilisateur, plutôt que de le charger
-    "à la volée" et faire attendre la première recherche sémantique.
-    Renvoie True si le chargement a réussi, False sinon (dépendance
-    manquante, échec de chargement...)."""
+    """Force le chargement immédiat du modèle (au démarrage de Monika, voir main.py) plutôt que d'attendre et de faire attendre la première recherche."""
     return _load_model() is not None
 
 
-# ==========================================================================
-# Mémoire persistante (memory_control)
-# ==========================================================================
+def embedding_to_blob(vector: np.ndarray) -> bytes:
+    return vector.astype(np.float32).tobytes()
+
+
+def blob_to_embedding(blob: bytes) -> np.ndarray:
+    return np.frombuffer(blob, dtype=np.float32)
+
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    if a.shape != b.shape:
+        return -1.0
+    denom = np.linalg.norm(a) * np.linalg.norm(b)
+    if denom == 0:
+        return 0.0
+    return float(np.dot(a, b) / denom)
+
 
 def _init_db() -> None:
-    """Initialise la table de mémoire si elle n'existe pas, et migre le schéma
-    (ajout de la colonne 'embedding') si la base existait déjà sans."""
+    """Crée la table de mémoire si besoin, et migre le schéma (colonne 'embedding') si la base existait déjà sans."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -220,43 +172,13 @@ def _init_db() -> None:
         conn.commit()
 
 
-def _get_embedding(text: str) -> Optional[np.ndarray]:
-    """Calcule le vecteur d'embedding d'un texte avec le modèle local BGE-M3.
-
-    Renvoie None (plutôt que de lever une exception) si le modèle local n'est
-    pas disponible, pour permettre un repli silencieux sur la recherche par
-    mot-clé.
-    """
-    return embed_text(text)
-
-
-def _embedding_to_blob(vector: np.ndarray) -> bytes:
-    return vector.astype(np.float32).tobytes()
-
-
-def _blob_to_embedding(blob: bytes) -> np.ndarray:
-    return np.frombuffer(blob, dtype=np.float32)
-
-
-def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    if a.shape != b.shape:
-        return -1.0  # embeddings de dimensions différentes (ex: modèle changé) -> non comparables
-    denom = np.linalg.norm(a) * np.linalg.norm(b)
-    if denom == 0:
-        return 0.0
-    return float(np.dot(a, b) / denom)
-
-
 def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
-    """Calcule l'embedding des souvenirs qui n'en ont pas encore (entrées créées
-    avant cette fonctionnalité, pendant une panne du modèle d'embeddings), et
-    revectorise aussi celles dont le vecteur stocké a une dimension différente
-    du modèle actuel (par ex. après un changement de backend d'embeddings)."""
+    """Vectorise les souvenirs sans embedding, et revectorise ceux dont la dimension stockée ne correspond plus au modèle actuel (changement de backend)."""
     cursor = conn.cursor()
     current_dim = embedding_dimension()
 
     if current_dim is not None:
-        # length(embedding) est en octets ; un float32 = 4 octets.
+
         cursor.execute(
             "SELECT id, key, value FROM memories WHERE embedding IS NULL OR length(embedding) != ? LIMIT ?",
             (current_dim * 4, BACKFILL_BATCH_SIZE),
@@ -272,18 +194,18 @@ def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
         return
 
     for row_id, key, value in rows:
-        vector = _get_embedding(f"{key} : {value}")
+        vector = embed_text(f"{key} : {value}")
         if vector is None:
-            break  # modèle d'embeddings indisponible, inutile d'insister sur les suivants
+            break
         cursor.execute(
             "UPDATE memories SET embedding = ? WHERE id = ?",
-            (_embedding_to_blob(vector), row_id),
+            (embedding_to_blob(vector), row_id),
         )
     conn.commit()
 
 
 def _keyword_search(conn: sqlite3.Connection, query: str) -> list[tuple[str, str, str]]:
-    """Recherche historique par mot-clé (LIKE), utilisée en repli."""
+    """Recherche par mot-clé (LIKE), utilisée en repli."""
     query_str = f"%{query.strip().lower()}%"
     cursor = conn.cursor()
     cursor.execute(
@@ -296,14 +218,16 @@ def _keyword_search(conn: sqlite3.Connection, query: str) -> list[tuple[str, str
     return cursor.fetchall()
 
 
-def _semantic_search(conn: sqlite3.Connection, query_embedding: np.ndarray) -> list[tuple[str, str, str, float]]:
+def _semantic_search(
+    conn: sqlite3.Connection, query_embedding: np.ndarray
+) -> list[tuple[str, str, str, float]]:
     """Recherche par similarité cosinus sur les souvenirs disposant d'un embedding."""
     cursor = conn.cursor()
     cursor.execute("SELECT category, key, value, embedding FROM memories WHERE embedding IS NOT NULL")
 
     scored = []
     for category, key, value, blob in cursor.fetchall():
-        similarity = _cosine_similarity(query_embedding, _blob_to_embedding(blob))
+        similarity = cosine_similarity(query_embedding, blob_to_embedding(blob))
         if similarity >= SEMANTIC_MIN_SIMILARITY:
             scored.append((category, key, value, similarity))
 
@@ -311,17 +235,10 @@ def _semantic_search(conn: sqlite3.Connection, query_embedding: np.ndarray) -> l
     return scored[:SEMANTIC_TOP_K]
 
 
-def memory_control(action: str, key: str = "", value: str = "", category: str = "general", query: str = "", **kwargs) -> str:
-    """Gère la mémoire persistante à long terme de Monika.
-
-    Actions disponibles :
-    - 'save'   : Enregistre une information (requiert 'key' et 'value').
-    - 'search' : Recherche des informations par sens (sémantique, via 'key' ou 'query' comme requête),
-                 avec repli automatique sur la recherche par mot-clé si les embeddings
-                 sont indisponibles ou ne donnent aucun résultat pertinent.
-    - 'list'   : Affiche l'ensemble des mémoires enregistrées.
-    """
-    # Si le modèle passe 'query' au lieu de 'key' (ex: memory_control(action='search', query='...'))
+def memory_control(
+    action: str, key: str = "", value: str = "", category: str = "general", query: str = "", **kwargs
+) -> str:
+    """Gère la mémoire persistante à long terme de Monika."""
     if query and not key:
         key = query
 
@@ -337,15 +254,18 @@ def memory_control(action: str, key: str = "", value: str = "", category: str = 
 
                 clean_key = key.strip().lower()
                 clean_value = value.strip()
-                vector = _get_embedding(f"{clean_key} : {clean_value}")
-                embedding_blob = _embedding_to_blob(vector) if vector is not None else None
+                vector = embed_text(f"{clean_key} : {clean_value}")
+                embedding_blob = embedding_to_blob(vector) if vector is not None else None
 
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO memories (category, key, value, embedding)
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(key) DO UPDATE SET
                         value=excluded.value, category=excluded.category, embedding=excluded.embedding
-                """, (category, clean_key, clean_value, embedding_blob))
+                """,
+                    (category, clean_key, clean_value, embedding_blob),
+                )
                 conn.commit()
                 return f"🧠 Mémoire enregistrée avec succès : [{key}] = {value}"
 
@@ -355,14 +275,16 @@ def memory_control(action: str, key: str = "", value: str = "", category: str = 
 
                 _backfill_missing_embeddings(conn)
 
-                query_embedding = _get_embedding(key)
+                query_embedding = embed_text(key)
                 if query_embedding is not None:
                     semantic_results = _semantic_search(conn, query_embedding)
                     if semantic_results:
-                        lines = [f"• [{cat}] {k} : {v}  (pertinence {sim:.0%})" for cat, k, v, sim in semantic_results]
+                        lines = [
+                            f"• [{cat}] {k} : {v}  (pertinence {sim:.0%})"
+                            for cat, k, v, sim in semantic_results
+                        ]
                         return "🔎 Résultats de la recherche sémantique :\n" + "\n".join(lines)
 
-                # Repli : pas d'embeddings disponibles, ou aucun résultat assez pertinent.
                 keyword_results = _keyword_search(conn, key)
                 if not keyword_results:
                     return f"Aucune mémoire trouvée pour '{key}'."
