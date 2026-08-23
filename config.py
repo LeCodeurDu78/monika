@@ -1,4 +1,4 @@
-"""Configuration centrale de Monika : chargée une seule fois au démarrage depuis les variables d'environnement (.env), avec valeurs par défaut raisonnables."""
+"""Configuration centrale de Monika."""
 
 import os
 from pathlib import Path
@@ -23,14 +23,10 @@ def _env_float(key: str, default: float) -> float:
 
 
 # --- Dossier applicatif -----------------------------------------------------
-# Toutes les données locales de Monika (mémoire, contacts, session WhatsApp,
-# voix clonée...) vivent ici. Redéfinissable via APP_DIR dans le .env.
 APP_DIR = Path(_env("APP_DIR", str(Path.home() / ".monika"))).expanduser()
 APP_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- LLM ---------------------------------------------------------------------
-# LLM_BASE_URL pointe vers un portail local (ex: http://localhost:3001) qui
-# fait office de passerelle vers freellmapi, exposée en API compatible OpenAI.
 MODEL_NAME = "qwen3.5-122b-a10b"
 VISION_MODEL_NAME = "gemini-3-flash-preview"
 
@@ -83,3 +79,12 @@ EXIT_WORDS = ("stop", "au revoir", "quitte la session", "quitte monika")
 # --- Tâches de fond ----------------------------------------------------------
 REMINDER_CHECK_INTERVAL_SECONDS = 60
 SCHEDULER_CHECK_INTERVAL_SECONDS = 30
+
+# --- Analyse visuelle passive (screen watcher) --------------------------------
+# Désactivée par défaut : l'écran peut contenir des informations sensibles, l'activation
+# doit être un choix explicite de l'utilisateur via la variable d'environnement.
+SCREEN_WATCH_ENABLED = _env("SCREEN_WATCH_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+SCREEN_WATCH_INTERVAL_SECONDS = _env_int("SCREEN_WATCH_INTERVAL_SECONDS", 120)
+# Distance de Hamming minimale entre deux hashs perceptifs (sur 64 bits) pour considérer que
+# l'écran a "significativement changé" et justifier un appel au modèle vision.
+SCREEN_WATCH_HASH_THRESHOLD = _env_int("SCREEN_WATCH_HASH_THRESHOLD", 5)

@@ -7,6 +7,7 @@ from config import SYSTEM_PROMPT, EXIT_WORDS, REMINDER_CHECK_INTERVAL_SECONDS, S
 from agents.orchestrator import process_user_message
 from tools.utils.reminder_tools import reminder_control
 from tools.system.scheduler_tools import pop_due_tasks
+from tools.system.screen_watcher import _start_screen_watcher
 from voice.voice_audio import record_until_silence
 from voice.voice_stt import transcribe
 from voice.voice_tts import speak
@@ -117,6 +118,7 @@ def run_monika() -> None:
     print("🤖 Monika Initialisée. Comment puis-je vous aider ?")
     stop_reminders = _start_reminder_watcher(lambda text: print(f"\n🔔 Monika: {text}"))
     stop_scheduler = _start_scheduler_watcher(lambda text: print(f"\n🗓️ Monika: {text}"))
+    stop_screen_watch = _start_screen_watcher(lambda text: print(f"\n🖥️ [Analyse écran] {text}"))
     try:
         _run_session(
             get_user_input=_read_text_input,
@@ -126,6 +128,7 @@ def run_monika() -> None:
     finally:
         stop_reminders.set()
         stop_scheduler.set()
+        stop_screen_watch.set()
 
 
 def run_monika_voice() -> None:
@@ -153,6 +156,7 @@ def run_monika_voice() -> None:
 
     stop_reminders = _start_reminder_watcher(_announce_reminder)
     stop_scheduler = _start_scheduler_watcher(_announce_scheduled_result)
+    stop_screen_watch = _start_screen_watcher(lambda text: print(f"\n🖥️ [Analyse écran] {text}"))
     try:
         _run_session(
             get_user_input=_read_voice_input,
@@ -162,3 +166,4 @@ def run_monika_voice() -> None:
     finally:
         stop_reminders.set()
         stop_scheduler.set()
+        stop_screen_watch.set()

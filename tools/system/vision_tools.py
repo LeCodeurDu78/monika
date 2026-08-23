@@ -3,30 +3,41 @@
 import base64
 import os
 import traceback
-from config import client, VISION_MODEL_NAME
+from config import client_vision, VISION_MODEL_NAME
 
 
-def _encode_image(image_path: str) -> str:
-    with open(image_path, "rb") as image_file:
+def _encode_image(image_source: "str | bytes") -> str:
+    """Encode une image en base64. Accepte un chemin sur disque (str) ou des bytes déjà en mémoire
+    (ex: une capture d'écran qui n'a pas besoin d'être écrite sur disque)."""
+    if isinstance(image_source, (bytes, bytearray)):
+        return base64.b64encode(bytes(image_source)).decode("utf-8")
+    with open(image_source, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
 
 def analyze_image(
-    image_path: str, prompt: str = "Décris cette image en détail et explique ce qu'elle contient."
+    image_path: "str | bytes",
+    prompt: str = "Décris cette image en détail et explique ce qu'elle contient.",
+    mime_type: str = None,
 ) -> str:
-    """Analyse une image locale ou une capture d'écran avec le modèle vision."""
+    """Analyse une image locale, une capture d'écran sur disque (chemin), ou des bytes d'image en
+    mémoire (ex: capture d'écran passive) avec le modèle vision."""
     try:
-        path = os.path.expanduser(image_path)
-        if not os.path.exists(path):
-            return f"Erreur : Le fichier image '{path}' est introuvable."
+        if isinstance(image_path, (bytes, bytearray)):
+            base64_image = _encode_image(image_path)
+            mime_type = mime_type or "image/png"
+        else:
+            path = os.path.expanduser(image_path)
+            if not os.path.exists(path):
+                return f"Erreur : Le fichier image '{path}' est introuvable."
 
-        ext = os.path.splitext(path)[1].lower().replace(".", "")
-        mime_type = (
-            "image/png" if ext == "png" else f"image/{ext if ext in ['jpeg', 'jpg', 'webp'] else 'png'}"
-        )
-        base64_image = _encode_image(path)
+            ext = os.path.splitext(path)[1].lower().replace(".", "")
+            mime_type = mime_type or (
+                "image/png" if ext == "png" else f"image/{ext if ext in ['jpeg', 'jpg', 'webp'] else 'png'}"
+            )
+            base64_image = _encode_image(path)
 
-        response = client.chat.completions.create(
+        response = client_vision.chat.completions.create(
             model=VISION_MODEL_NAME,
             messages=[
                 {
