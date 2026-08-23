@@ -1,7 +1,7 @@
 """Point d'entrée de Monika."""
 
 from agent import run_monika, run_monika_voice
-from tools.memory import warmup as warmup_embeddings
+from tools.knowledge.memory import warmup as warmup_embeddings
 
 if __name__ == "__main__":
     warmup_embeddings()

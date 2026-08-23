@@ -1,30 +1,28 @@
 """Rappels avec échéance pour Monika, stockés en SQLite."""
 
-import os
-import sqlite3
 from datetime import datetime
-from config import APP_DIR
 
-DB_PATH = str(APP_DIR / "reminders.db")
+from core.db import db_path, get_connection, init_table
+
+DB_PATH = db_path("reminders.db")
+
+_CREATE_SQL = """
+    CREATE TABLE IF NOT EXISTS reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message TEXT NOT NULL,
+        due_at TEXT NOT NULL,
+        notified INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+"""
 
 
 def _init_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS reminders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message TEXT NOT NULL,
-                due_at TEXT NOT NULL,
-                notified INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
+    init_table(DB_PATH, _CREATE_SQL)
 
 
 def _parse_due_at(due_at: str) -> datetime:
-    """Parse une date/heure ISO (ex: '2026-08-20T09:00:00'). Lève ValueError si invalide."""
+    """Parse une date/heure ISO (ex: '2026-08-20T09:00:00')."""
     return datetime.fromisoformat(due_at.strip())
 
 
@@ -39,7 +37,7 @@ def reminder_control(
     _init_db()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection(DB_PATH) as conn:
             cursor = conn.cursor()
 
             if action == "add":

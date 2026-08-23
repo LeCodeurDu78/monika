@@ -5,9 +5,10 @@ from typing import Callable, Optional
 
 from config import SYSTEM_PROMPT, EXIT_WORDS, REMINDER_CHECK_INTERVAL_SECONDS, SCHEDULER_CHECK_INTERVAL_SECONDS
 from agents.orchestrator import process_user_message
+from core.watcher import start_watcher
 from tools.utils.reminder_tools import reminder_control
-from tools.system.scheduler_tools import pop_due_tasks
-from tools.system.screen_watcher import _start_screen_watcher
+from tools.utils.scheduler_tools import pop_due_tasks
+from tools.vision.screen_watcher import _start_screen_watcher
 from voice.voice_audio import record_until_silence
 from voice.voice_stt import transcribe
 from voice.voice_tts import speak
@@ -18,7 +19,7 @@ def _run_session(
     on_reply: Callable[[str], None],
     on_exit: Callable[[], None] = lambda: None,
 ) -> None:
-    """Boucle générique de session : lit l'entrée utilisateur, exécute un tour ReAct puis transmet la réponse à `on_reply`."""
+    """Boucle générique de session."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     try:
@@ -39,7 +40,7 @@ def _run_session(
 
 
 def _read_text_input() -> Optional[str]:
-    """Lit une ligne au clavier ; renvoie None sur EOF ou mot de sortie explicite."""
+    """Lit une ligne au clavier."""
     try:
         text = input("\nVous: ")
     except EOFError:
@@ -48,7 +49,7 @@ def _read_text_input() -> Optional[str]:
 
 
 def _read_voice_input() -> Optional[str]:
-    """Enregistre et transcrit un tour de parole ; renvoie None si un mot de sortie est prononcé."""
+    """Enregistre et transcrit un tour de parole."""
     audio = record_until_silence()
     if audio.size == 0:
         return ""
@@ -62,50 +63,44 @@ def _read_voice_input() -> Optional[str]:
 
 
 def _start_reminder_watcher(announce: Callable[[str], None]) -> threading.Event:
-    """Démarre un thread démon qui annonce les rappels à échéance toutes les REMINDER_CHECK_INTERVAL_SECONDS."""
-    stop_event = threading.Event()
+    """Démarre un watcher qui annonce les rappels."""
 
-    def _loop() -> None:
-        while not stop_event.wait(REMINDER_CHECK_INTERVAL_SECONDS):
-            due_text = reminder_control("due")
-            if due_text:
-                announce(due_text)
+    def _tick() -> None:
+        due_text = reminder_control("due")
+        if due_text:
+            announce(due_text)
 
-    threading.Thread(target=_loop, daemon=True).start()
-    return stop_event
+    return start_watcher(REMINDER_CHECK_INTERVAL_SECONDS, _tick)
 
 
 def _start_scheduler_watcher(on_result: Callable[[str], None]) -> threading.Event:
-    """Démarre un thread démon qui exécute les tâches planifiées à échéance (toutes les SCHEDULER_CHECK_INTERVAL_SECONDS) de façon autonome : chaque..."""
-    stop_event = threading.Event()
+    """Démarre un watcher."""
 
-    def _loop() -> None:
-        while not stop_event.wait(SCHEDULER_CHECK_INTERVAL_SECONDS):
-            for task_id, instruction in pop_due_tasks():
-                print(f"🗓️ [Tâche planifiée #{task_id}] Exécution : {instruction}")
-                task_messages = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {
-                        "role": "system",
-                        "content": (
-                            "Contexte : l'échéance d'une tâche planifiée précédemment vient d'arriver. "
-                            "Aucun utilisateur n'est présent dans cette conversation pour répondre. "
-                            "Exécute l'instruction ci-dessous MAINTENANT, directement avec les outils "
-                            "nécessaires pour l'accomplir (ex: send_whatsapp_message, email_control, "
-                            "get_weather...). N'appelle PAS scheduler_control : la planification est déjà "
-                            "faite, il s'agit maintenant de l'exécuter réellement, pas de la reporter."
-                        ),
-                    },
-                    {"role": "user", "content": instruction},
-                ]
-                try:
-                    result = process_user_message(task_messages, interactive=False)
-                except Exception as e:
-                    result = f"⚠️ Échec de la tâche planifiée #{task_id} : {e}"
-                on_result(result)
+    def _tick() -> None:
+        for task_id, instruction in pop_due_tasks():
+            print(f"🗓️ [Tâche planifiée #{task_id}] Exécution : {instruction}")
+            task_messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": (
+                        "Contexte : l'échéance d'une tâche planifiée précédemment vient d'arriver. "
+                        "Aucun utilisateur n'est présent dans cette conversation pour répondre. "
+                        "Exécute l'instruction ci-dessous MAINTENANT, directement avec les outils "
+                        "nécessaires pour l'accomplir (ex: send_whatsapp_message, email_control, "
+                        "get_weather...). N'appelle PAS scheduler_control : la planification est déjà "
+                        "faite, il s'agit maintenant de l'exécuter réellement, pas de la reporter."
+                    ),
+                },
+                {"role": "user", "content": instruction},
+            ]
+            try:
+                result = process_user_message(task_messages, interactive=False)
+            except Exception as e:
+                result = f"⚠️ Échec de la tâche planifiée #{task_id} : {e}"
+            on_result(result)
 
-    threading.Thread(target=_loop, daemon=True).start()
-    return stop_event
+    return start_watcher(SCHEDULER_CHECK_INTERVAL_SECONDS, _tick)
 
 
 def _is_exit(user_text: str) -> bool:
@@ -132,7 +127,7 @@ def run_monika() -> None:
 
 
 def run_monika_voice() -> None:
-    """Lance Monika en mode vocal (micro en entrée, voix clonée XTTS en sortie)."""
+    """Lance Monika en mode vocal."""
     print("Monika (mode vocal) initialisée.")
     speak("Bonjour, je t'écoute.")
 

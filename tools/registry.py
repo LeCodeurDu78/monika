@@ -13,17 +13,17 @@ from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
-from tools.memory import memory_control
-from tools.system.rag_tools import rag_control
-from tools.system.graph_rag import graph_search, graph_backfill
-from tools.system.vision_tools import analyze_image
+from tools.knowledge.memory import memory_control
+from tools.knowledge.rag_tools import rag_control
+from tools.knowledge.graph_rag import graph_search, graph_backfill
+from tools.vision.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool
 from tools.utils.joke_tools import get_joke
 from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.reminder_tools import reminder_control
-from tools.system.scheduler_tools import scheduler_control
+from tools.utils.scheduler_tools import scheduler_control
 
 
 def _schema(name: str, description: str, properties: dict, required: list | None = None) -> dict:

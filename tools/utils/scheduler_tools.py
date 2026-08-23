@@ -1,33 +1,31 @@
-"""Planification de tâches en arrière-plan pour Monika — l'équivalent d'un cron personnel."""
+"""Planification de tâches en arrière-plan pour Monika."""
 
-import os
-import sqlite3
 from datetime import datetime, timedelta
-from config import APP_DIR
 
-DB_PATH = str(APP_DIR / "scheduler.db")
+from core.db import db_path, get_connection, init_table
+
+DB_PATH = db_path("scheduler.db")
 
 VALID_SCHEDULE_TYPES = ("once", "daily", "interval")
 SCHEDULE_LABELS = {"once": "une fois", "daily": "tous les jours", "interval": "en boucle"}
 
+_CREATE_SQL = """
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instruction TEXT NOT NULL,
+        schedule_type TEXT NOT NULL,
+        run_at TEXT,
+        time_of_day TEXT,
+        interval_seconds INTEGER,
+        next_run TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
 
 def _init_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS scheduled_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                instruction TEXT NOT NULL,
-                schedule_type TEXT NOT NULL,
-                run_at TEXT,
-                time_of_day TEXT,
-                interval_seconds INTEGER,
-                next_run TEXT NOT NULL,
-                active INTEGER NOT NULL DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
+    init_table(DB_PATH, _CREATE_SQL)
 
 
 def _parse_time_of_day(value: str) -> tuple[int, int]:
@@ -62,7 +60,7 @@ def scheduler_control(
     _init_db()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection(DB_PATH) as conn:
             cursor = conn.cursor()
 
             if action == "add":
@@ -141,11 +139,11 @@ def scheduler_control(
 
 
 def pop_due_tasks() -> list[tuple[int, str]]:
-    """Récupère les tâches actives arrivées à échéance et avance leur prochaine exécution ('daily'/'interval') ou les désactive ('once')."""
+    """Récupère les tâches actives arrivées à échéance et avance leur prochaine exécution ou les désactive."""
     _init_db()
     due: list[tuple[int, str]] = []
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT id, instruction, schedule_type, time_of_day, interval_seconds, next_run "

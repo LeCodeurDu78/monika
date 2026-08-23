@@ -1,4 +1,4 @@
-"""v4 — Mémoire augmentée : Graph RAG (graphe de connaissances) en complément du RAG vectoriel existant (tools/system/rag_tools.py)."""
+"""Graph RAG (graphe de connaissances)."""
 
 import json
 import os
@@ -7,11 +7,11 @@ from typing import Optional
 
 import numpy as np
 
-from tools.memory import embed_text, blob_to_embedding, cosine_similarity
-from tools.system.rag_tools import DB_PATH as RAG_DB_PATH
-from config import APP_DIR
+from tools.knowledge.memory import embed_text, blob_to_embedding, cosine_similarity
+from tools.knowledge.rag_tools import DB_PATH as RAG_DB_PATH
+from core.db import db_path, get_connection, init_table
 
-DB_PATH = str(APP_DIR / "graph.db")
+DB_PATH = db_path("graph.db")
 
 
 GRAPH_BACKFILL_BATCH_SIZE = 15
@@ -47,42 +47,37 @@ EXTRACTION_SYSTEM_PROMPT = (
 )
 
 
-def _init_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS entities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL COLLATE NOCASE,
-                entity_type TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(name COLLATE NOCASE)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS relations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                from_entity_id INTEGER NOT NULL REFERENCES entities(id),
-                relation TEXT NOT NULL,
-                to_entity_id INTEGER NOT NULL REFERENCES entities(id),
-                source TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+_CREATE_SQL = """
+    CREATE TABLE IF NOT EXISTS entities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE,
+        entity_type TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(name COLLATE NOCASE)
+    );
+    CREATE TABLE IF NOT EXISTS relations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_entity_id INTEGER NOT NULL REFERENCES entities(id),
+        relation TEXT NOT NULL,
+        to_entity_id INTEGER NOT NULL REFERENCES entities(id),
+        source TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS processed_chunks (
+        source TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (source, chunk_index)
+    );
+    CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_entity_id);
+    CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_entity_id);
+    CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source, chunk_index);
+"""
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS processed_chunks (
-                source TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (source, chunk_index)
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_entity_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_entity_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source, chunk_index)")
-        conn.commit()
+
+def _init_db() -> None:
+    init_table(DB_PATH, _CREATE_SQL)
 
 
 def _get_or_create_entity(cursor: sqlite3.Cursor, name: str, entity_type: str = "") -> Optional[int]:
@@ -137,14 +132,14 @@ def _extract_entities_relations(text: str) -> Optional[dict]:
 
 
 def _backfill_batch(conn: sqlite3.Connection, limit: int = GRAPH_BACKFILL_BATCH_SIZE) -> int:
-    """Extrait entités/relations pour les chunks de rag.db pas encore traités (limité à `limit` chunks pour rester rapide, appelé automatiquement avant..."""
+    """Extrait entités/relations pour les chunks de rag.db pas encore traités."""
     if not os.path.exists(RAG_DB_PATH):
         return 0
 
     cursor = conn.cursor()
     processed_count = 0
 
-    with sqlite3.connect(RAG_DB_PATH) as rag_conn:
+    with get_connection(RAG_DB_PATH) as rag_conn:
         rag_cursor = rag_conn.cursor()
         rag_cursor.execute("SELECT source, chunk_index, content FROM rag_chunks")
         all_chunks = rag_cursor.fetchall()
@@ -202,7 +197,7 @@ def _backfill_batch(conn: sqlite3.Connection, limit: int = GRAPH_BACKFILL_BATCH_
 def graph_backfill(limit: int = 200) -> str:
     """Force un backfill complet (ou jusqu'à `limit` chunks) : à utiliser après une grosse indexation RAG plutôt que d'attendre que les recherches..."""
     _init_db()
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection(DB_PATH) as conn:
         count = _backfill_batch(conn, limit=limit)
     if count == 0:
         return "Aucun nouveau chunk à traiter : le graphe de connaissances est déjà à jour."
@@ -214,7 +209,7 @@ def _semantic_seed_chunks(query_embedding: np.ndarray) -> list[tuple[str, int, f
     if not os.path.exists(RAG_DB_PATH):
         return []
 
-    with sqlite3.connect(RAG_DB_PATH) as rag_conn:
+    with get_connection(RAG_DB_PATH) as rag_conn:
         rag_cursor = rag_conn.cursor()
         rag_cursor.execute(
             "SELECT source, chunk_index, embedding FROM rag_chunks WHERE embedding IS NOT NULL"
@@ -309,7 +304,7 @@ def graph_search(query: str) -> str:
     _init_db()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection(DB_PATH) as conn:
             cursor = conn.cursor()
 
             _backfill_batch(conn, limit=GRAPH_BACKFILL_BATCH_SIZE)

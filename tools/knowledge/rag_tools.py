@@ -6,7 +6,7 @@ from typing import Optional
 
 import numpy as np
 
-from tools.memory import (
+from tools.knowledge.memory import (
     embed_text,
     embed_texts,
     embedding_dimension,
@@ -14,9 +14,9 @@ from tools.memory import (
     blob_to_embedding,
     cosine_similarity,
 )
-from config import APP_DIR
+from core.db import db_path, get_connection, init_table
 
-DB_PATH = str(APP_DIR / "rag.db")
+DB_PATH = db_path("rag.db")
 
 
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".py", ".log"}
@@ -38,21 +38,21 @@ BACKFILL_BATCH_SIZE = 25
 _IGNORED_DIR_NAMES = {"__pycache__", ".git", "node_modules", ".venv", "venv"}
 
 
+_CREATE_SQL = """
+    CREATE TABLE IF NOT EXISTS rag_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        embedding BLOB,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_rag_source ON rag_chunks(source);
+"""
+
+
 def _init_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS rag_chunks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                embedding BLOB,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_source ON rag_chunks(source)")
-        conn.commit()
+    init_table(DB_PATH, _CREATE_SQL)
 
 
 def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
@@ -208,7 +208,7 @@ def rag_control(action: str, path: str = "", query: str = "", doc_name: str = ""
     _init_db()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection(DB_PATH) as conn:
             cursor = conn.cursor()
 
             if action == "ingest":
