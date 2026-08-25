@@ -1,8 +1,6 @@
 """Analyse visuelle passive de Monika."""
 
 import io
-import platform
-import subprocess
 import threading
 from typing import Callable, Optional
 
@@ -15,6 +13,7 @@ from config import (
 )
 from core.db import db_path, get_connection, init_table
 from core.watcher import start_watcher
+from tools.system.screen_context import capture_screen_bytes, get_screen_context
 from tools.vision.vision_tools import analyze_image
 
 DB_PATH = db_path("screen_log.db")
@@ -30,32 +29,27 @@ _CREATE_SQL = """
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
         image_hash TEXT NOT NULL,
-        analysis TEXT NOT NULL
+        analysis TEXT NOT NULL,
+        app TEXT,
+        window_title TEXT,
+        activity_guess TEXT,
+        raw_text TEXT
     )
 """
 
+_COLUMNS = ("app", "window_title", "activity_guess", "raw_text")
+
 
 def _init_db() -> None:
-    """Crée la table screen_log si nécessaire."""
+    """Crée la table screen_log si nécessaire, et migre le schéma si une v6 sans colonnes v4 existe déjà."""
     init_table(DB_PATH, _CREATE_SQL)
-
-
-def _capture_screen_bytes() -> Optional[bytes]:
-    """Capture l'écran courant et renvoie des bytes PNG en mémoire."""
-    try:
-        if platform.system() == "Windows":
-            from PIL import ImageGrab
-
-            img = ImageGrab.grab()
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            return buf.getvalue()
-        else:
-            result = subprocess.run(["grim", "-"], capture_output=True, check=True)
-            return result.stdout
-    except Exception as e:
-        print(f"⚠️ [screen_watcher] Échec de la capture d'écran : {e}")
-        return None
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        existing_columns = {row[1] for row in cursor.execute("PRAGMA table_info(screen_log)")}
+        for column in _COLUMNS:
+            if column not in existing_columns:
+                cursor.execute(f"ALTER TABLE screen_log ADD COLUMN {column} TEXT")
+        conn.commit()
 
 
 def _perceptual_hash(image_bytes: bytes, hash_size: int = 8) -> str:
@@ -73,17 +67,50 @@ def _hamming_distance(hash_a: str, hash_b: str) -> int:
     return bin(int(hash_a, 16) ^ int(hash_b, 16)).count("1")
 
 
-def _log_analysis(image_hash: str, analysis: str) -> None:
+def _log_context(image_hash: str, context: dict) -> None:
     with get_connection(DB_PATH) as conn:
         conn.execute(
-            "INSERT INTO screen_log (image_hash, analysis) VALUES (?, ?)",
-            (image_hash, analysis),
+            """
+            INSERT INTO screen_log (image_hash, analysis, app, window_title, activity_guess, raw_text)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                image_hash,
+                context.get("activity_guess", ""),
+                context.get("app", ""),
+                context.get("window_title", ""),
+                context.get("activity_guess", ""),
+                context.get("raw_text", ""),
+            ),
         )
         conn.commit()
 
 
+def get_latest_screen_context() -> Optional[dict]:
+    """Renvoie le dernier résumé structuré loggé."""
+    _init_db()
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT app, window_title, activity_guess, raw_text, timestamp FROM screen_log "
+            "ORDER BY id DESC LIMIT 1"
+        )
+        row = cursor.fetchone()
+    if not row:
+        return None
+    app, window_title, activity_guess, raw_text, timestamp = row
+    return {
+        "app": app or "",
+        "window_title": window_title or "",
+        "activity_guess": activity_guess or "",
+        "raw_text": raw_text or "",
+        "timestamp": timestamp,
+    }
+
+
 def _start_screen_watcher(
     on_analysis: Callable[[str], None] = lambda text: None,
+    on_context: Callable[[dict], None] = lambda context: None,
     prompt: str = DEFAULT_PROMPT,
 ) -> threading.Event:
     """Démarre un watcher."""
@@ -95,7 +122,7 @@ def _start_screen_watcher(
 
     def _tick() -> None:
         nonlocal last_hash
-        image_bytes = _capture_screen_bytes()
+        image_bytes = capture_screen_bytes()
         if not image_bytes:
             return
 
@@ -115,7 +142,14 @@ def _start_screen_watcher(
         except Exception as e:
             analysis = f"Erreur lors de l'analyse d'écran : {e}"
 
-        _log_analysis(current_hash, analysis)
-        on_analysis(analysis)
+        try:
+            context = get_screen_context(image_bytes=image_bytes, vision_description=analysis)
+        except Exception as e:
+            context = {"app": "", "window_title": "", "activity_guess": analysis, "raw_text": ""}
+            print(f"⚠️ [screen_watcher] Échec de l'analyse contextuelle structurée : {e}")
+
+        _log_context(current_hash, context)
+        on_analysis(context.get("activity_guess", analysis))
+        on_context(context)
 
     return start_watcher(SCREEN_WATCH_INTERVAL_SECONDS, _tick)

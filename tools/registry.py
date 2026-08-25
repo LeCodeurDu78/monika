@@ -1,4 +1,4 @@
-"""Registre unique des outils de Monika : chaque outil est décrit une seule fois (fonction Python exécutable + schéma JSON), sous forme de deux vues d'un même..."""
+"""Registre unique des outils de Monika : chaque outil est décrit une seule fois."""
 
 import importlib
 import inspect
@@ -24,6 +24,9 @@ from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.reminder_tools import reminder_control
 from tools.utils.scheduler_tools import scheduler_control
+from tools.system.screen_context import get_screen_context
+from tools.system.behavior_log import behavior_control
+from agents.proactive import proactive_control
 
 
 def _schema(name: str, description: str, properties: dict, required: list | None = None) -> dict:
@@ -65,6 +68,9 @@ AVAILABLE_TOOLS = {
     "manage_contacts": manage_contacts,
     "reminder_control": reminder_control,
     "scheduler_control": scheduler_control,
+    "get_screen_context": get_screen_context,
+    "behavior_control": behavior_control,
+    "proactive_control": proactive_control,
 }
 
 TOOLS_SCHEMA = [
@@ -438,6 +444,47 @@ TOOLS_SCHEMA = [
                 "type": "integer",
                 "description": "Identifiant de la tâche à annuler (requis pour action='cancel', voir action='list').",
             },
+        },
+        ["action"],
+    ),
+    _schema(
+        "get_screen_context",
+        "Renvoie un résumé STRUCTURÉ de ce qui est actuellement affiché à l'écran : application "
+        "active, titre de fenêtre, texte exact extrait par OCR (URLs, messages d'erreur, noms de "
+        "fichiers), et une estimation de l'activité en cours. Plus précis que analyze_image pour "
+        "du texte exact ; utile pour comprendre le contexte de travail actuel de l'utilisateur "
+        "avant d'agir ou de répondre.",
+        {},
+        [],
+    ),
+    _schema(
+        "behavior_control",
+        "Consulte ('show') ou vide ('reset') le journal des habitudes d'usage de Monika (outils "
+        "préférés, heures d'usage, corrections répétées de l'utilisateur). Utilise ce journal pour "
+        "affiner tes réponses, et propose 'reset' si l'utilisateur exprime une préoccupation de "
+        "vie privée à ce sujet.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["show", "reset"],
+                "description": "'show' pour afficher le résumé comportemental, 'reset' pour vider le journal.",
+            }
+        },
+        ["action"],
+    ),
+    _schema(
+        "proactive_control",
+        "Active ou désactive le mode silencieux des interventions autonomes de Monika (celles "
+        "qu'elle prend de sa propre initiative, sans qu'on le lui demande). Utilise 'silence' si "
+        "l'utilisateur demande explicitement à ne plus être dérangé/interrompu spontanément (ex: "
+        "'tais-toi', 'arrête de m'interrompre'), 'resume' pour réactiver, 'status' pour vérifier "
+        "l'état actuel.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["silence", "resume", "status"],
+                "description": "Action à effectuer sur le mode silencieux des interventions autonomes.",
+            }
         },
         ["action"],
     ),

@@ -29,6 +29,7 @@ _SYSTEM_TOOL_NAMES = [
     "run_script",
     "analyze_image",
     "create_full_project",
+    "get_screen_context",
 ]
 
 _SOCIAL_TOOL_NAMES = [
@@ -53,6 +54,8 @@ _PRODUCTIVITY_TOOL_NAMES = [
     "reminder_control",
     "scheduler_control",
     "create_custom_tool",
+    "behavior_control",
+    "proactive_control",
 ]
 
 _assigned = set(_SYSTEM_TOOL_NAMES + _SOCIAL_TOOL_NAMES + _KNOWLEDGE_TOOL_NAMES + _PRODUCTIVITY_TOOL_NAMES)
@@ -67,13 +70,14 @@ SPECIALISTS: dict[str, Specialist] = {
         description=(
             "Actions concrètes sur l'ordinateur : ouvrir des applications, gérer des fichiers/dossiers, "
             "contrôler le système (volume, capture d'écran, média), lancer des commandes/scripts, "
-            "analyser des images/captures d'écran, initialiser des projets complets (code + GitHub + Obsidian)."
+            "analyser des images/captures d'écran, obtenir le contexte structuré de l'écran actif "
+            "(app, fenêtre, texte OCR), initialiser des projets complets (code + GitHub + Obsidian)."
         ),
         system_prompt=(
             "Tu es l'agent Système de Monika. Tu exécutes des actions concrètes sur l'ordinateur de "
-            "l'utilisateur : fichiers, applications, terminal, projets, images. Utilise directement les outils "
-            "à ta disposition, sans demander de confirmation superflue. Réponds en une phrase claire et concise "
-            "confirmant ce qui a été fait ou constaté."
+            "l'utilisateur : fichiers, applications, terminal, projets, images, contexte d'écran. Utilise "
+            "directement les outils à ta disposition, sans demander de confirmation superflue. Réponds en une "
+            "phrase claire et concise confirmant ce qui a été fait ou constaté."
         ),
         tool_names=_SYSTEM_TOOL_NAMES,
     ),
@@ -111,14 +115,16 @@ SPECIALISTS: dict[str, Specialist] = {
         label="Agent Productivité",
         description=(
             "Vie quotidienne et automatisation : météo, Spotify, blagues, rappels avec échéance, tâches "
-            "planifiées exécutées de façon autonome, création de nouveaux outils personnalisés, et tout outil "
-            "personnalisé déjà créé par l'utilisateur."
+            "planifiées exécutées de façon autonome, création de nouveaux outils personnalisés, consultation/"
+            "réinitialisation du journal comportemental, contrôle du mode silencieux des interventions "
+            "autonomes, et tout outil personnalisé déjà créé par l'utilisateur."
         ),
         system_prompt=(
             "Tu es l'agent Productivité de Monika. Tu gères la météo, Spotify, les blagues, les rappels, les "
-            "tâches planifiées et les outils personnalisés créés par l'utilisateur (ainsi que la création de "
-            "nouveaux outils via create_custom_tool si aucun outil existant ne convient). Sois concis et "
-            "confirme précisément ce qui a été fait ou programmé."
+            "tâches planifiées, le journal comportemental (behavior_control), le mode silencieux des "
+            "interventions autonomes (proactive_control) et les outils personnalisés créés par l'utilisateur "
+            "(ainsi que la création de nouveaux outils via create_custom_tool si aucun outil existant ne "
+            "convient). Sois concis et confirme précisément ce qui a été fait ou programmé."
         ),
         tool_names=_PRODUCTIVITY_TOOL_NAMES,
     ),

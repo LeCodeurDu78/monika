@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # --- LLM ---------------------------------------------------------------------
     MODEL_NAME: str = "qwen3.5-122b-a10b"
-    VISION_MODEL_NAME: str = "gemini-3-flash-preview"
+    VISION_MODEL_NAME: str = "gemini-3.6-flash"
     LLM_BASE_URL: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     LLM_VISION_URL: Optional[str] = None
@@ -43,15 +43,13 @@ class Settings(BaseSettings):
     # --- Voix : reconnaissance (STT, faster-whisper) ---------------------------------
     VOICE_STT_LANGUAGE: str = "fr"
     VOICE_STT_MODEL: str = "small"
-    VOICE_STT_DEVICE: str = "cpu"
+    VOICE_STT_DEVICE: str = "cuda"
     VOICE_STT_COMPUTE_TYPE: str = "int8"
 
     # --- Voix : synthèse (TTS, XTTS v2) ----------------------------------------------
     VOICE_XTTS_MODEL: str = "tts_models/multilingual/multi-dataset/xtts_v2"
-    VOICE_XTTS_DEVICE: str = "cpu"
-    # None -> retombe sur VOICE_STT_LANGUAGE (résolu dans le validator ci-dessous, comme avant)
+    VOICE_XTTS_DEVICE: str = "cuda"
     VOICE_XTTS_LANGUAGE: Optional[str] = None
-    # None -> retombe sur APP_DIR / "xtts-voices" / "monika_speaker.wav" (idem)
     VOICE_XTTS_SPEAKER_WAV: Optional[Path] = None
 
     # --- Voix : capture audio (VAD) ------------------------------------------------
@@ -70,14 +68,25 @@ class Settings(BaseSettings):
     SCREEN_WATCH_INTERVAL_SECONDS: int = 120
     SCREEN_WATCH_HASH_THRESHOLD: int = 5
 
+    # --- Analyse contextuelle de l'écran ------------------
+    SCREEN_CONTEXT_OCR_ENABLED: bool = True
+    SCREEN_CONTEXT_OCR_LANG: str = "fra+eng"
+
+    # --- Proactivité -------------------
+    PROACTIVE_ENABLED: bool = False
+    PROACTIVE_HEARTBEAT_INTERVAL_SECONDS: int = 20
+    PROACTIVE_DEDUP_COOLDOWN_MINUTES: int = 30
+    PROACTIVE_SILENT_MODE: bool = False
+
+    # --- Apprentissage comportemental ------------------------------
+    BEHAVIOR_LOG_ENABLED: bool = True
+
     @model_validator(mode="after")
     def _resolve_dependent_defaults(self) -> "Settings":
-        """Résout les valeurs par défaut qui dépendent d'un autre champ, exactement comme le
-        faisait config.py (ex: XTTS_LANGUAGE retombait sur STT_LANGUAGE si non fourni)."""
         if self.VOICE_XTTS_LANGUAGE is None:
             self.VOICE_XTTS_LANGUAGE = self.VOICE_STT_LANGUAGE
         if self.VOICE_XTTS_SPEAKER_WAV is None:
-            self.VOICE_XTTS_SPEAKER_WAV = self.APP_DIR / "xtts-voices" / "monika_speaker.wav"
+            self.VOICE_XTTS_SPEAKER_WAV = self.APP_DIR / "monika_speaker.wav"
         return self
 
 

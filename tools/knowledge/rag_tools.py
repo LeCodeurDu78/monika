@@ -75,10 +75,12 @@ def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
     if not rows:
         return
 
-    for row_id, content in rows:
-        vector = embed_text(content)
-        if vector is None:
-            break
+    contents = [content for _row_id, content in rows]
+    vectors = embed_texts(contents)
+    if vectors is None:
+        return
+
+    for (row_id, _content), vector in zip(rows, vectors):
         cursor.execute(
             "UPDATE rag_chunks SET embedding = ? WHERE id = ?", (embedding_to_blob(vector), row_id)
         )

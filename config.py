@@ -1,13 +1,4 @@
-"""Configuration centrale de Monika.
-
-Ce module ne contient plus de logique de lecture d'environnement : toute la config est
-déclarée dans `core.settings.Settings`. Ce fichier ne fait que (1) construire les objets qui
-dépendent de la config (clients OpenAI, réglage wikipedia) et (2) ré-exporter les valeurs sous
-les noms historiquement utilisés dans le reste du projet, pour ne rien casser en aval.
-
-À terme, les nouveaux modules devraient importer directement `from core.settings import settings`
-plutôt que ces alias — conservés ici uniquement pour la compatibilité pendant la migration.
-"""
+"""Configuration centrale de Monika."""
 
 import wikipedia
 from openai import OpenAI
@@ -75,3 +66,16 @@ SCHEDULER_CHECK_INTERVAL_SECONDS = settings.SCHEDULER_CHECK_INTERVAL_SECONDS
 SCREEN_WATCH_ENABLED = settings.SCREEN_WATCH_ENABLED
 SCREEN_WATCH_INTERVAL_SECONDS = settings.SCREEN_WATCH_INTERVAL_SECONDS
 SCREEN_WATCH_HASH_THRESHOLD = settings.SCREEN_WATCH_HASH_THRESHOLD
+
+# --- Analyse contextuelle de l'écran (v4) --------------------------------------
+SCREEN_CONTEXT_OCR_ENABLED = settings.SCREEN_CONTEXT_OCR_ENABLED
+SCREEN_CONTEXT_OCR_LANG = settings.SCREEN_CONTEXT_OCR_LANG
+
+# --- Proactivité (v4) -----------------------------------------------------------
+PROACTIVE_ENABLED = settings.PROACTIVE_ENABLED
+PROACTIVE_HEARTBEAT_INTERVAL_SECONDS = settings.PROACTIVE_HEARTBEAT_INTERVAL_SECONDS
+PROACTIVE_DEDUP_COOLDOWN_MINUTES = settings.PROACTIVE_DEDUP_COOLDOWN_MINUTES
+PROACTIVE_SILENT_MODE = settings.PROACTIVE_SILENT_MODE
+
+# --- Apprentissage comportemental (v4) ------------------------------------------
+BEHAVIOR_LOG_ENABLED = settings.BEHAVIOR_LOG_ENABLED
