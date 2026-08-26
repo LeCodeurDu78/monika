@@ -49,7 +49,7 @@ XTTS_DEVICE = settings.VOICE_XTTS_DEVICE
 XTTS_LANGUAGE = settings.VOICE_XTTS_LANGUAGE
 XTTS_SPEAKER_WAV = settings.VOICE_XTTS_SPEAKER_WAV
 
-# --- Voix : capture audio (VAD) ---------------------------------------------
+# --- Voix : capture audio ---------------------------------------------
 FRAME_MS = settings.FRAME_MS
 SAMPLE_RATE = settings.SAMPLE_RATE
 SILENCE_MS = settings.VOICE_SILENCE_MS
@@ -62,20 +62,23 @@ EXIT_WORDS = ("stop", "au revoir", "quitte la session", "quitte monika")
 REMINDER_CHECK_INTERVAL_SECONDS = settings.REMINDER_CHECK_INTERVAL_SECONDS
 SCHEDULER_CHECK_INTERVAL_SECONDS = settings.SCHEDULER_CHECK_INTERVAL_SECONDS
 
-# --- Analyse visuelle passive (screen watcher) --------------------------------
+# --- Analyse visuelle passive --------------------------------
 SCREEN_WATCH_ENABLED = settings.SCREEN_WATCH_ENABLED
 SCREEN_WATCH_INTERVAL_SECONDS = settings.SCREEN_WATCH_INTERVAL_SECONDS
 SCREEN_WATCH_HASH_THRESHOLD = settings.SCREEN_WATCH_HASH_THRESHOLD
 
-# --- Analyse contextuelle de l'écran (v4) --------------------------------------
+# --- Analyse contextuelle de l'écran --------------------------------------
 SCREEN_CONTEXT_OCR_ENABLED = settings.SCREEN_CONTEXT_OCR_ENABLED
 SCREEN_CONTEXT_OCR_LANG = settings.SCREEN_CONTEXT_OCR_LANG
 
-# --- Proactivité (v4) -----------------------------------------------------------
+# --- Proactivité -----------------------------------------------------------
 PROACTIVE_ENABLED = settings.PROACTIVE_ENABLED
 PROACTIVE_HEARTBEAT_INTERVAL_SECONDS = settings.PROACTIVE_HEARTBEAT_INTERVAL_SECONDS
 PROACTIVE_DEDUP_COOLDOWN_MINUTES = settings.PROACTIVE_DEDUP_COOLDOWN_MINUTES
 PROACTIVE_SILENT_MODE = settings.PROACTIVE_SILENT_MODE
 
-# --- Apprentissage comportemental (v4) ------------------------------------------
+# --- Apprentissage comportemental ------------------------------------------
 BEHAVIOR_LOG_ENABLED = settings.BEHAVIOR_LOG_ENABLED
+
+# --- Contrôle du navigateur --------------------------------------------------
+BROWSER_HEADLESS = settings.BROWSER_HEADLESS

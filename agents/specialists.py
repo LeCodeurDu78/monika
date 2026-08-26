@@ -30,6 +30,7 @@ _SYSTEM_TOOL_NAMES = [
     "analyze_image",
     "create_full_project",
     "get_screen_context",
+    "browser_control",
 ]
 
 _SOCIAL_TOOL_NAMES = [
@@ -54,6 +55,7 @@ _PRODUCTIVITY_TOOL_NAMES = [
     "reminder_control",
     "scheduler_control",
     "create_custom_tool",
+    "patch_existing_file",
     "behavior_control",
     "proactive_control",
 ]
@@ -71,11 +73,16 @@ SPECIALISTS: dict[str, Specialist] = {
             "Actions concrètes sur l'ordinateur : ouvrir des applications, gérer des fichiers/dossiers, "
             "contrôler le système (volume, capture d'écran, média), lancer des commandes/scripts, "
             "analyser des images/captures d'écran, obtenir le contexte structuré de l'écran actif "
-            "(app, fenêtre, texte OCR), initialiser des projets complets (code + GitHub + Obsidian)."
+            "(app, fenêtre, texte OCR), initialiser des projets complets (code + GitHub + Obsidian), "
+            "contrôler un navigateur Firefox géré par Monika elle-même (onglets, navigation, lecture de "
+            "page, clic/remplissage de champs — aucun navigateur déjà ouvert requis)."
         ),
         system_prompt=(
             "Tu es l'agent Système de Monika. Tu exécutes des actions concrètes sur l'ordinateur de "
-            "l'utilisateur : fichiers, applications, terminal, projets, images, contexte d'écran. Utilise "
+            "l'utilisateur : fichiers, applications, terminal, projets, images, contexte d'écran, navigateur "
+            "(browser_control : Monika lance et gère elle-même un Firefox dédié au premier besoin, c'est "
+            "une fenêtre distincte du navigateur personnel de l'utilisateur — précise-le si on te demande "
+            "d'agir sur 'le' navigateur). Utilise "
             "directement les outils à ta disposition, sans demander de confirmation superflue. Réponds en une "
             "phrase claire et concise confirmant ce qui a été fait ou constaté."
         ),
@@ -117,14 +124,19 @@ SPECIALISTS: dict[str, Specialist] = {
             "Vie quotidienne et automatisation : météo, Spotify, blagues, rappels avec échéance, tâches "
             "planifiées exécutées de façon autonome, création de nouveaux outils personnalisés, consultation/"
             "réinitialisation du journal comportemental, contrôle du mode silencieux des interventions "
-            "autonomes, et tout outil personnalisé déjà créé par l'utilisateur."
+            "autonomes, et tout outil personnalisé déjà créé par l'utilisateur. Peut aussi patcher un fichier "
+            "existant du projet Monika (patch_existing_file) quand une modification de code va au-delà de la "
+            "création d'un outil isolé."
         ),
         system_prompt=(
             "Tu es l'agent Productivité de Monika. Tu gères la météo, Spotify, les blagues, les rappels, les "
             "tâches planifiées, le journal comportemental (behavior_control), le mode silencieux des "
             "interventions autonomes (proactive_control) et les outils personnalisés créés par l'utilisateur "
             "(ainsi que la création de nouveaux outils via create_custom_tool si aucun outil existant ne "
-            "convient). Sois concis et confirme précisément ce qui a été fait ou programmé."
+            "convient, ou le patch d'un fichier existant via patch_existing_file si la demande porte "
+            "explicitement sur une modification du code de Monika elle-même — utilise-le avec prudence, "
+            "uniquement quand l'utilisateur demande clairement une modification de son propre code). Sois "
+            "concis et confirme précisément ce qui a été fait ou programmé."
         ),
         tool_names=_PRODUCTIVITY_TOOL_NAMES,
     ),

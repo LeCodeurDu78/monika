@@ -52,6 +52,12 @@ def execute_tool_call(tool_call, available_tools: dict, interactive: bool = True
                 "L'échéance est déjà arrivée : exécute l'instruction MAINTENANT avec l'outil approprié "
                 "(ex: send_whatsapp_message, email_control, get_weather...), ne la re-planifie pas."
             )
+        if func_name == "patch_existing_file":
+            return (
+                "Action refusée : la modification du code de Monika (patch_existing_file) ne peut pas "
+                "s'exécuter depuis une tâche autonome/planifiée, sans supervision directe de l'utilisateur. "
+                "Demande à l'utilisateur de faire cette modification dans une conversation interactive."
+            )
 
     if func_name not in available_tools:
         return (

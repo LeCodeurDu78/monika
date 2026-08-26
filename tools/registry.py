@@ -17,7 +17,8 @@ from tools.knowledge.memory import memory_control
 from tools.knowledge.rag_tools import rag_control
 from tools.knowledge.graph_rag import graph_search, graph_backfill
 from tools.vision.vision_tools import analyze_image
-from tools.meta_tools import create_custom_tool
+from tools.meta_tools import create_custom_tool, patch_existing_file
+from tools.system.browser_control import browser_control
 from tools.utils.joke_tools import get_joke
 from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
@@ -62,6 +63,8 @@ AVAILABLE_TOOLS = {
     "graph_backfill": graph_backfill,
     "analyze_image": analyze_image,
     "create_custom_tool": create_custom_tool,
+    "patch_existing_file": patch_existing_file,
+    "browser_control": browser_control,
     "get_joke": get_joke,
     "spotify_control": spotify_control,
     "send_whatsapp_message": send_whatsapp_message,
@@ -320,6 +323,66 @@ TOOLS_SCHEMA = [
             },
         },
         ["tool_name", "python_code", "description"],
+    ),
+    _schema(
+        "patch_existing_file",
+        "Modifie un fichier .py déjà existant DANS LE PROJET Monika à partir d'une instruction en langage "
+        "naturel (contrairement à create_custom_tool qui crée un nouvel outil isolé). Sauvegarde toujours "
+        "l'original, valide et TESTE le patch avant de le rendre définitif, et restaure automatiquement le "
+        "fichier d'origine en cas d'échec. À utiliser avec prudence : préfère create_custom_tool quand une "
+        "nouvelle fonctionnalité peut être un outil isolé plutôt qu'une modification d'un fichier existant.",
+        {
+            "file_path": {
+                "type": "string",
+                "description": "Chemin du fichier .py à modifier, à l'intérieur du projet Monika (absolu ou relatif).",
+            },
+            "instruction": {
+                "type": "string",
+                "description": "Instruction précise en langage naturel décrivant la modification à apporter.",
+            },
+        },
+        ["file_path", "instruction"],
+    ),
+    _schema(
+        "browser_control",
+        "Contrôle un navigateur Firefox géré par Monika elle-même (lancé automatiquement au premier "
+        "besoin, avec un profil persistant dédié — aucun navigateur déjà ouvert requis côté utilisateur) : "
+        "lister/changer d'onglet, naviguer, lire le contenu visible d'une page, cliquer sur un élément ou "
+        "remplir un champ identifié par sa description (texte visible, rôle, label, placeholder — jamais "
+        "par coordonnées x/y), ou fermer le navigateur.",
+        {
+            "action": {
+                "type": "string",
+                "enum": [
+                    "list_tabs",
+                    "switch_tab",
+                    "navigate",
+                    "read_page_content",
+                    "click_element",
+                    "fill_field",
+                    "close_browser",
+                ],
+                "description": "L'action à effectuer sur le navigateur.",
+            },
+            "url": {
+                "type": "string",
+                "description": "URL de destination (requis pour action='navigate').",
+            },
+            "tab_id": {
+                "type": "integer",
+                "description": "Index de l'onglet cible tel qu'affiché par action='list_tabs' (requis pour action='switch_tab').",
+            },
+            "description": {
+                "type": "string",
+                "description": "Description de l'élément ciblé : texte visible, libellé du bouton/lien, label du champ, etc. "
+                "(requis pour action='click_element' et action='fill_field').",
+            },
+            "text": {
+                "type": "string",
+                "description": "Texte à saisir dans le champ ciblé (requis pour action='fill_field').",
+            },
+        },
+        ["action"],
     ),
     _schema(
         "get_joke",

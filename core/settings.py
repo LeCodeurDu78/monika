@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     # --- Apprentissage comportemental ------------------------------
     BEHAVIOR_LOG_ENABLED: bool = True
 
+    # --- Contrôle du navigateur -------------------------------------------
+    BROWSER_HEADLESS: bool = False
+
     @model_validator(mode="after")
     def _resolve_dependent_defaults(self) -> "Settings":
         if self.VOICE_XTTS_LANGUAGE is None:
