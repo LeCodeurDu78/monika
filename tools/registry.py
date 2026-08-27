@@ -347,9 +347,17 @@ TOOLS_SCHEMA = [
         "browser_control",
         "Contrôle un navigateur Firefox géré par Monika elle-même (lancé automatiquement au premier "
         "besoin, avec un profil persistant dédié — aucun navigateur déjà ouvert requis côté utilisateur) : "
-        "lister/changer d'onglet, naviguer, lire le contenu visible d'une page, cliquer sur un élément ou "
+        "lister/changer d'onglet, naviguer, lire le contenu visible d'une page, lister les éléments "
+        "interactifs (champs/boutons/liens) avec leur vrai nom accessible, cliquer sur un élément ou "
         "remplir un champ identifié par sa description (texte visible, rôle, label, placeholder — jamais "
-        "par coordonnées x/y), ou fermer le navigateur.",
+        "par coordonnées x/y), ou fermer le navigateur. IMPORTANT : avant de cliquer ou remplir un champ "
+        "sur une page inconnue, utilise d'abord 'list_interactive_elements' pour connaître les libellés "
+        "exacts des éléments plutôt que de deviner une description au hasard — cela évite des tentatives "
+        "ratées et économise des tours d'action. 'navigate' et 'click_element' renvoient déjà un aperçu "
+        "compact de la page résultante : ne rappelle PAS 'read_page_content' juste après pour vérifier "
+        "qu'une action a marché, l'aperçu suffit dans la grande majorité des cas. Pour 'read_page_content', "
+        "utilise full=False (aperçu court, par défaut) sauf besoin réel d'extraire un contenu détaillé "
+        "(liste de résultats, article, formulaire complexe), auquel cas passe full=True.",
         {
             "action": {
                 "type": "string",
@@ -358,6 +366,7 @@ TOOLS_SCHEMA = [
                     "switch_tab",
                     "navigate",
                     "read_page_content",
+                    "list_interactive_elements",
                     "click_element",
                     "fill_field",
                     "close_browser",
@@ -380,6 +389,12 @@ TOOLS_SCHEMA = [
             "text": {
                 "type": "string",
                 "description": "Texte à saisir dans le champ ciblé (requis pour action='fill_field').",
+            },
+            "full": {
+                "type": "boolean",
+                "description": "Pour action='read_page_content' uniquement. false (défaut) = aperçu compact "
+                "(quelques centaines de caractères), true = contenu complet de la page (coûteux en contexte, "
+                "à réserver à l'extraction d'un contenu détaillé).",
             },
         },
         ["action"],

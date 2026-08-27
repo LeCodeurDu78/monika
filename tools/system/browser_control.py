@@ -1,18 +1,13 @@
 """Contrôle du navigateur pour Monika."""
 
+from pathlib import Path
+from config import APP_DIR, BROWSER_HEADLESS as HEADLESS
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-try:
-    from config import APP_DIR, BROWSER_HEADLESS as HEADLESS
-except Exception:
-    from pathlib import Path
-
-    APP_DIR = Path.home() / ".monika"
-    HEADLESS = False
-
-SESSION_DIR = str(APP_DIR / ".monika_browser_profile")
+SESSION_DIR = str(APP_DIR / ".monika_browser_session")
 DEFAULT_ACTION_TIMEOUT_MS = 8000
 MAX_CONTENT_CHARS = 4000
+SNIPPET_CHARS = 300
 
 _playwright = None
 _context = None
@@ -32,6 +27,8 @@ def _ensure_context():
     if _playwright is None:
         _playwright = sync_playwright().start()
 
+    _clear_stale_lock()
+
     _context = _playwright.firefox.launch_persistent_context(
         user_data_dir=SESSION_DIR,
         headless=HEADLESS,
@@ -40,6 +37,20 @@ def _ensure_context():
         _context.new_page()
 
     return _context
+
+
+def _clear_stale_lock():
+    """Supprime le verrou de profil Firefox."""
+    profile = Path(SESSION_DIR)
+    if not profile.exists():
+        return
+    for lock_name in ("lock", ".parentlock"):
+        lock_path = profile / lock_name
+        try:
+            if lock_path.exists() or lock_path.is_symlink():
+                lock_path.unlink()
+        except Exception:
+            pass
 
 
 def close_browser() -> str:
@@ -112,6 +123,18 @@ def switch_tab(tab_id: int) -> str:
         return f"❌ Erreur lors du changement d'onglet : {e}"
 
 
+def _snippet(page, max_chars: int = SNIPPET_CHARS) -> str:
+    """Aperçu compact du texte visible."""
+    try:
+        raw_text = page.inner_text("body")
+        text = " ".join(raw_text.split())
+        truncated = text[:max_chars]
+        suffix = "…" if len(text) > max_chars else ""
+        return f"{truncated}{suffix}"
+    except Exception:
+        return "(aperçu indisponible)"
+
+
 def navigate(url: str) -> str:
     """Navigue vers une URL dans l'onglet actif."""
     if not url.startswith(("http://", "https://")):
@@ -119,17 +142,22 @@ def navigate(url: str) -> str:
     try:
         page = _active_page()
         page.goto(url, timeout=15000, wait_until="domcontentloaded")
-        return f"✅ Navigation effectuée vers {page.url} (titre : {page.title()})."
+        return (
+            f"✅ Navigation effectuée vers {page.url} (titre : {page.title()}).\n"
+            f"Aperçu : {_snippet(page)}"
+        )
     except PlaywrightTimeoutError:
         return f"⚠️ Délai dépassé en chargeant '{url}' (la page continue peut-être de charger)."
     except Exception as e:
         return f"❌ Erreur de navigation : {e}"
 
 
-def read_page_content() -> str:
+def read_page_content(full: bool = True) -> str:
     """Extrait le texte visible de l'onglet actif."""
     try:
         page = _active_page()
+        if not full:
+            return f"[{page.title()} — {page.url}]\n{_snippet(page)}"
         raw_text = page.inner_text("body")
         text = " ".join(raw_text.split())
         truncated = text[:MAX_CONTENT_CHARS]
@@ -137,6 +165,49 @@ def read_page_content() -> str:
         return f"[{page.title()} — {page.url}]\n{truncated}{suffix}"
     except Exception as e:
         return f"❌ Erreur lors de la lecture de la page : {e}"
+
+
+def list_interactive_elements() -> str:
+    """Liste les champs, boutons et liens visibles de l'onglet actif avec leur nom accessible."""
+    try:
+        page = _active_page()
+        elements = page.eval_on_selector_all(
+            "input, textarea, button, a[href], select, [role=button], [role=textbox], [role=combobox]",
+            """(els) => els.map(el => {
+                const visible = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+                if (!visible) return null;
+                const label = el.getAttribute('aria-label')
+                    || el.getAttribute('placeholder')
+                    || el.innerText
+                    || el.value
+                    || el.name
+                    || '';
+                return {
+                    tag: el.tagName.toLowerCase(),
+                    role: el.getAttribute('role') || '',
+                    type: el.getAttribute('type') || '',
+                    label: label.trim().slice(0, 80)
+                };
+            }).filter(Boolean)"""
+        )
+        seen = set()
+        lines = []
+        for el in elements:
+            if not el["label"]:
+                continue
+            key = (el["tag"], el["label"])
+            if key in seen:
+                continue
+            seen.add(key)
+            kind = el["role"] or el["type"] or el["tag"]
+            lines.append(f"- [{kind}] \"{el['label']}\"")
+            if len(lines) >= 40:
+                break
+        if not lines:
+            return "Aucun élément interactif visible détecté."
+        return f"[{page.title()} — {page.url}]\nÉléments détectés :\n" + "\n".join(lines)
+    except Exception as e:
+        return f"❌ Erreur lors du listage des éléments : {e}"
 
 
 def _locate(page, description: str):
@@ -170,7 +241,10 @@ def click_element(description: str) -> str:
         if element is None:
             return f"❌ Élément introuvable pour la description : '{description}'."
         element.click(timeout=DEFAULT_ACTION_TIMEOUT_MS)
-        return f"✅ Clic effectué sur l'élément correspondant à '{description}'."
+        return (
+            f"✅ Clic effectué sur l'élément correspondant à '{description}'.\n"
+            f"Aperçu après clic : {_snippet(page)}"
+        )
     except PlaywrightTimeoutError:
         return f"⚠️ Élément trouvé mais non cliquable dans le délai imparti ('{description}')."
     except Exception as e:
@@ -185,7 +259,7 @@ def fill_field(description: str, text: str) -> str:
         if element is None:
             return f"❌ Champ introuvable pour la description : '{description}'."
         element.fill(text, timeout=DEFAULT_ACTION_TIMEOUT_MS)
-        return f"✅ Champ '{description}' rempli."
+        return f"✅ Champ '{description}' rempli."  # pas d'aperçu ici : remplir un champ ne change quasi jamais la page visible
     except PlaywrightTimeoutError:
         return f"⚠️ Champ trouvé mais non modifiable dans le délai imparti ('{description}')."
     except Exception as e:
@@ -198,6 +272,7 @@ def browser_control(
     tab_id: int = None,
     description: str = None,
     text: str = None,
+    full: bool = False,
 ) -> str:
     """Point d'entrée unique pour l'agent."""
     if action == "list_tabs":
@@ -211,7 +286,9 @@ def browser_control(
             return "❌ Paramètre 'url' requis pour l'action 'navigate'."
         return navigate(url)
     if action == "read_page_content":
-        return read_page_content()
+        return read_page_content(full=full)
+    if action == "list_interactive_elements":
+        return list_interactive_elements()
     if action == "click_element":
         if not description:
             return "❌ Paramètre 'description' requis pour l'action 'click_element'."

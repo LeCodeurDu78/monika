@@ -5,9 +5,9 @@ import json
 from config import client, MODEL_NAME
 from tools.system.behavior_log import log_behavior_event
 
-MAX_CONTEXT_MESSAGES = 18
-TOOL_RESULT_MAX_CHARS = 1500
-TOOL_RESULT_TRUNCATED_CHARS = 1200
+MAX_CONTEXT_MESSAGES = 50
+TOOL_RESULT_MAX_CHARS = 15000
+TOOL_RESULT_TRUNCATED_CHARS = 12000
 
 
 def prune_context(messages: list) -> list:

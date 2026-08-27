@@ -4,7 +4,7 @@ from config import SYSTEM_PROMPT
 from agents.runtime import run_react_loop
 from tools.registry import AVAILABLE_TOOLS, TOOLS_SCHEMA
 
-MAX_TURNS = 8
+MAX_TURNS = 100
 
 AGENT_SYSTEM_PROMPT = (
     SYSTEM_PROMPT + " "
