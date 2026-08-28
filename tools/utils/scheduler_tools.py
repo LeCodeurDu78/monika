@@ -1,33 +1,33 @@
-"""Planification de tâches en arrière-plan pour Monika — l'équivalent d'un cron personnel."""
+"""Planification de tâches en arrière-plan pour Monika."""
 
-import os
-import sqlite3
 from datetime import datetime, timedelta
-from config import APP_DIR
 
-DB_PATH = str(APP_DIR / "scheduler.db")
+from core.db import db_path, get_connection, init_table
+from core.native_scheduler import register_daily, register_once, unregister
+from core.settings import settings
+
+DB_PATH = db_path("scheduler.db")
 
 VALID_SCHEDULE_TYPES = ("once", "daily", "interval")
 SCHEDULE_LABELS = {"once": "une fois", "daily": "tous les jours", "interval": "en boucle"}
 
+_CREATE_SQL = """
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instruction TEXT NOT NULL,
+        schedule_type TEXT NOT NULL,
+        run_at TEXT,
+        time_of_day TEXT,
+        interval_seconds INTEGER,
+        next_run TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
 
 def _init_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS scheduled_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                instruction TEXT NOT NULL,
-                schedule_type TEXT NOT NULL,
-                run_at TEXT,
-                time_of_day TEXT,
-                interval_seconds INTEGER,
-                next_run TEXT NOT NULL,
-                active INTEGER NOT NULL DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
+    init_table(DB_PATH, _CREATE_SQL)
 
 
 def _parse_time_of_day(value: str) -> tuple[int, int]:
@@ -62,7 +62,7 @@ def scheduler_control(
     _init_db()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection(DB_PATH) as conn:
             cursor = conn.cursor()
 
             if action == "add":
@@ -106,8 +106,20 @@ def scheduler_control(
                     ),
                 )
                 conn.commit()
+                new_id = cursor.lastrowid
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
+                    # l'échéance, même si le process principal n'est pas actif (voir wake_runner.py).
+                    # Les tâches 'interval' ne sont pas relayées nativement (boucle courte, conçue
+                    # pour tourner tant que Monika est active).
+                    if schedule_type == "once":
+                        register_once(f"task_{new_id}", next_run, kind="task", ref_id=new_id)
+                    elif schedule_type == "daily":
+                        register_daily(f"task_{new_id}", time_of_day.strip(), kind="task", ref_id=new_id)
+
                 return (
-                    f"🗓️ Tâche planifiée (#{cursor.lastrowid}, {SCHEDULE_LABELS[schedule_type]}) : "
+                    f"🗓️ Tâche planifiée (#{new_id}, {SCHEDULE_LABELS[schedule_type]}) : "
                     f"« {instruction.strip()} » — prochain déclenchement le {next_run.strftime('%d/%m/%Y à %H:%M')}."
                 )
 
@@ -132,6 +144,10 @@ def scheduler_control(
                 conn.commit()
                 if cursor.rowcount == 0:
                     return f"Aucune tâche planifiée trouvée avec l'identifiant #{task_id}."
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    unregister(f"task_{task_id}")
+
                 return f"🛑 Tâche planifiée #{task_id} annulée."
 
             return "Action non reconnue pour l'outil scheduler_control."
@@ -141,11 +157,11 @@ def scheduler_control(
 
 
 def pop_due_tasks() -> list[tuple[int, str]]:
-    """Récupère les tâches actives arrivées à échéance et avance leur prochaine exécution ('daily'/'interval') ou les désactive ('once')."""
+    """Récupère les tâches actives arrivées à échéance et avance leur prochaine exécution ou les désactive."""
     _init_db()
     due: list[tuple[int, str]] = []
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT id, instruction, schedule_type, time_of_day, interval_seconds, next_run "
@@ -159,6 +175,9 @@ def pop_due_tasks() -> list[tuple[int, str]]:
 
             if schedule_type == "once":
                 cursor.execute("UPDATE scheduled_tasks SET active = 0 WHERE id = ?", (task_id,))
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    # La tâche est consommée : on retire le déclenchement natif ponctuel associé.
+                    unregister(f"task_{task_id}")
             elif schedule_type == "daily":
                 new_next = _next_daily_run(time_of_day, after=datetime.fromisoformat(next_run))
                 cursor.execute(

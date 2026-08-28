@@ -6,7 +6,9 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from config import APP_DIR
+from core.settings import settings
+
+APP_DIR = settings.APP_DIR
 
 CREDENTIALS_FILE = str(APP_DIR / "credentials_calendar.json")
 TOKEN_FILE = str(APP_DIR / "token.json")

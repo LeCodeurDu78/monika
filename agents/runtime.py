@@ -3,10 +3,11 @@
 import json
 
 from config import client, MODEL_NAME
+from tools.system.behavior_tools import log_behavior_event
 
 MAX_CONTEXT_MESSAGES = 18
-TOOL_RESULT_MAX_CHARS = 1500
-TOOL_RESULT_TRUNCATED_CHARS = 1200
+TOOL_RESULT_MAX_CHARS = 15000
+TOOL_RESULT_TRUNCATED_CHARS = 12000
 
 
 def prune_context(messages: list) -> list:
@@ -51,14 +52,18 @@ def execute_tool_call(tool_call, available_tools: dict, interactive: bool = True
                 "L'échéance est déjà arrivée : exécute l'instruction MAINTENANT avec l'outil approprié "
                 "(ex: send_whatsapp_message, email_control, get_weather...), ne la re-planifie pas."
             )
+        if func_name == "patch_existing_file":
+            return (
+                "Action refusée : la modification du code de Monika (patch_existing_file) ne peut pas "
+                "s'exécuter depuis une tâche autonome/planifiée, sans supervision directe de l'utilisateur. "
+                "Demande à l'utilisateur de faire cette modification dans une conversation interactive."
+            )
 
     if func_name not in available_tools:
-        return (
-            f"⚠️ L'outil '{func_name}' n'est pas disponible pour cet agent. "
-            "Délègue plutôt cette action à l'agent spécialisé compétent."
-        )
+        return f"⚠️ L'outil '{func_name}' n'est pas disponible."
 
     print(f"⚙️ [Action] : Exécution de {func_name}({func_args})...")
+    log_behavior_event("tool_call", tool_name=func_name)
     tool_function = available_tools[func_name]
     return str(tool_function(**func_args))
 

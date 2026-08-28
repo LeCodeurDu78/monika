@@ -3,7 +3,10 @@
 import os
 import subprocess
 from datetime import datetime
-from config import CODE_BASE_DIR, OBSIDIAN_BASE_DIR
+from core.settings import settings
+
+CODE_BASE_DIR = str(settings.CODE_BASE_DIR)
+OBSIDIAN_BASE_DIR = str(settings.OBSIDIAN_BASE_DIR)
 
 
 def create_full_project(project_name: str, private: bool = True) -> str:

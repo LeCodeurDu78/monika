@@ -5,13 +5,13 @@ import numpy as np
 import sounddevice as sd
 import webrtcvad
 
-from config import (
-    SAMPLE_RATE,
-    FRAME_MS,
-    VAD_AGGRESSIVENESS,
-    SILENCE_MS,
-    MAX_RECORD_SECONDS,
-)
+from core.settings import settings
+
+SAMPLE_RATE = settings.SAMPLE_RATE
+FRAME_MS = settings.FRAME_MS
+VAD_AGGRESSIVENESS = settings.VOICE_VAD_AGGRESSIVENESS
+SILENCE_MS = settings.VOICE_SILENCE_MS
+MAX_RECORD_SECONDS = settings.VOICE_MAX_RECORD_SECONDS
 
 FRAME_SAMPLES = int(SAMPLE_RATE * FRAME_MS / 1000)
 

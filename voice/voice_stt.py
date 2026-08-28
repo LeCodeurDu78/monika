@@ -2,7 +2,12 @@
 
 import numpy as np
 from faster_whisper import WhisperModel
-from config import STT_MODEL_SIZE, STT_DEVICE, STT_COMPUTE_TYPE, STT_LANGUAGE
+from core.settings import settings
+
+STT_MODEL_SIZE = settings.VOICE_STT_MODEL
+STT_DEVICE = settings.VOICE_STT_DEVICE
+STT_COMPUTE_TYPE = settings.VOICE_STT_COMPUTE_TYPE
+STT_LANGUAGE = settings.VOICE_STT_LANGUAGE
 
 _model = None
 

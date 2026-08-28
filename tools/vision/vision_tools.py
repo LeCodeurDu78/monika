@@ -7,8 +7,7 @@ from config import client_vision, VISION_MODEL_NAME
 
 
 def _encode_image(image_source: "str | bytes") -> str:
-    """Encode une image en base64. Accepte un chemin sur disque (str) ou des bytes déjà en mémoire
-    (ex: une capture d'écran qui n'a pas besoin d'être écrite sur disque)."""
+    """Encode une image en base64."""
     if isinstance(image_source, (bytes, bytearray)):
         return base64.b64encode(bytes(image_source)).decode("utf-8")
     with open(image_source, "rb") as image_file:
@@ -20,8 +19,7 @@ def analyze_image(
     prompt: str = "Décris cette image en détail et explique ce qu'elle contient.",
     mime_type: str = None,
 ) -> str:
-    """Analyse une image locale, une capture d'écran sur disque (chemin), ou des bytes d'image en
-    mémoire (ex: capture d'écran passive) avec le modèle vision."""
+    """Analyse une image locale."""
     try:
         if isinstance(image_path, (bytes, bytearray)):
             base64_image = _encode_image(image_path)

@@ -19,8 +19,13 @@ torchaudio.load = _load_with_soundfile
 
 from TTS.api import TTS
 
-from config import XTTS_MODEL_NAME, XTTS_DEVICE, XTTS_LANGUAGE, XTTS_SPEAKER_WAV
+from core.settings import settings
 from voice.voice_audio import play_audio
+
+XTTS_MODEL_NAME = settings.VOICE_XTTS_MODEL
+XTTS_DEVICE = settings.VOICE_XTTS_DEVICE
+XTTS_LANGUAGE = settings.VOICE_XTTS_LANGUAGE
+XTTS_SPEAKER_WAV = settings.VOICE_XTTS_SPEAKER_WAV
 
 _tts = None
 

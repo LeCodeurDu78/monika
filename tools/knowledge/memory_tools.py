@@ -1,15 +1,19 @@
-"""Mémoire persistante long terme pour Monika (SQLite) et backend d'embeddings 100% local basé sur BGE-M3 (BAAI/bge-m3, multilingue), utilisé pour la recherche..."""
+"""Mémoire persistante long terme pour Monika."""
 
-import os
 import sqlite3
 import threading
 from typing import Optional, Sequence
+from sentence_transformers import SentenceTransformer
 
 import numpy as np
 
-from config import APP_DIR, LOCAL_EMBEDDING_MODEL_NAME, LOCAL_EMBEDDING_DEVICE
+from core.settings import settings
 
-DB_PATH = str(APP_DIR / "memory.db")
+LOCAL_EMBEDDING_MODEL_NAME = settings.LOCAL_EMBEDDING_MODEL_NAME
+LOCAL_EMBEDDING_DEVICE = settings.LOCAL_EMBEDDING_DEVICE
+from core.db import db_path, get_connection
+
+DB_PATH = db_path("memory.db")
 
 
 SEMANTIC_TOP_K = 5
@@ -25,7 +29,7 @@ _load_failed = False
 
 
 def resolve_device() -> str:
-    """Device utilisé pour l'inférence : valeur explicite de config.py/.env, sinon auto-détection (CUDA si disponible, sinon CPU)."""
+    """Device utilisé pour l'inférence."""
     if LOCAL_EMBEDDING_DEVICE:
         return LOCAL_EMBEDDING_DEVICE
     try:
@@ -37,14 +41,14 @@ def resolve_device() -> str:
 
 
 def _get_model_dimension(model) -> int:
-    """Dimension des embeddings, compatible anciennes/nouvelles versions de sentence-transformers (méthode renommée get_sentence_embedding_dimension ->..."""
+    """Dimension des embeddings."""
     if hasattr(model, "get_embedding_dimension"):
         return model.get_embedding_dimension()
     return model.get_sentence_embedding_dimension()
 
 
 def _load_model():
-    """Charge et met en cache le modèle BGE-M3 (thread-safe, une seule fois)."""
+    """Charge et met en cache le modèle."""
     global _model, _load_failed
 
     if _model is not None or _load_failed:
@@ -53,17 +57,6 @@ def _load_model():
     with _model_lock:
         if _model is not None or _load_failed:
             return _model
-
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError:
-            print(
-                "⚠️ [Embeddings locaux] Le module 'sentence-transformers' n'est pas installé.\n"
-                "   -> pip install sentence-transformers torch\n"
-                "   En attendant, Monika retombe sur la recherche par mot-clé."
-            )
-            _load_failed = True
-            return None
 
         device = resolve_device()
         try:
@@ -81,7 +74,7 @@ def _load_model():
 
 
 def embedding_dimension() -> Optional[int]:
-    """Dimension des vecteurs du modèle actuellement chargé, ou None si indisponible."""
+    """Dimension des vecteurs du modèle actuellement chargé."""
     model = _load_model()
     if model is None:
         return None
@@ -89,7 +82,7 @@ def embedding_dimension() -> Optional[int]:
 
 
 def embed_text(text: str) -> Optional[np.ndarray]:
-    """Vectorise un texte unique. Renvoie None si le modèle est indisponible."""
+    """Vectorise un texte unique."""
     cleaned = text.strip()
     if not cleaned:
         return None
@@ -107,7 +100,7 @@ def embed_text(text: str) -> Optional[np.ndarray]:
 
 
 def embed_texts(texts: Sequence[str]) -> Optional[np.ndarray]:
-    """Vectorise plusieurs textes en un seul batch (plus rapide qu'appeler embed_text() en boucle)."""
+    """Vectorise plusieurs textes en un seul batch."""
     cleaned = [t.strip() for t in texts if t and t.strip()]
     if not cleaned:
         return np.empty((0,), dtype=np.float32)
@@ -125,12 +118,12 @@ def embed_texts(texts: Sequence[str]) -> Optional[np.ndarray]:
 
 
 def is_available() -> bool:
-    """Indique si le backend d'embeddings locaux est utilisable, sans forcer un chargement inutile."""
+    """Indique si le backend d'embeddings locaux est utilisable."""
     return _load_model() is not None
 
 
 def warmup() -> bool:
-    """Force le chargement immédiat du modèle (au démarrage de Monika, voir main.py) plutôt que d'attendre et de faire attendre la première recherche."""
+    """Force le chargement immédiat du modèle."""
     return _load_model() is not None
 
 
@@ -152,9 +145,8 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _init_db() -> None:
-    """Crée la table de mémoire si besoin, et migre le schéma (colonne 'embedding') si la base existait déjà sans."""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
+    """Crée la table de mémoire si besoin."""
+    with get_connection(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS memories (
@@ -193,10 +185,12 @@ def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
     if not rows:
         return
 
-    for row_id, key, value in rows:
-        vector = embed_text(f"{key} : {value}")
-        if vector is None:
-            break
+    texts = [f"{key} : {value}" for _row_id, key, value in rows]
+    vectors = embed_texts(texts)
+    if vectors is None:
+        return
+
+    for (row_id, _key, _value), vector in zip(rows, vectors):
         cursor.execute(
             "UPDATE memories SET embedding = ? WHERE id = ?",
             (embedding_to_blob(vector), row_id),
@@ -235,6 +229,62 @@ def _semantic_search(
     return scored[:SEMANTIC_TOP_K]
 
 
+def _init_proactive_actions_db() -> None:
+    """Crée la table de journalisation des actions autonomes."""
+    with get_connection(DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS proactive_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reason TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                payload TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.commit()
+
+
+def log_proactive_action(reason: str, action_type: str, payload: str = "") -> None:
+    """Enregistre une intervention autonome réalisée, pour permettre le dédoublonnage."""
+    _init_proactive_actions_db()
+    with get_connection(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO proactive_actions (reason, action_type, payload) VALUES (?, ?, ?)",
+            (reason.strip(), action_type.strip(), payload.strip()),
+        )
+        conn.commit()
+
+
+def was_recently_notified(reason: str, cooldown_minutes: int) -> bool:
+    """Indique si une raison très similaire a déjà donné lieu à une intervention autonome récammment."""
+    _init_proactive_actions_db()
+
+    reason_words = {w for w in reason.strip().lower().split() if len(w) > 3}
+    if not reason_words:
+        return False
+
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT reason FROM proactive_actions "
+            "WHERE created_at >= datetime('now', ?) ORDER BY created_at DESC LIMIT 50",
+            (f"-{int(cooldown_minutes)} minutes",),
+        )
+        recent_reasons = [row[0] for row in cursor.fetchall()]
+
+    for past_reason in recent_reasons:
+        past_words = {w for w in past_reason.strip().lower().split() if len(w) > 3}
+        if not past_words:
+            continue
+        overlap = len(reason_words & past_words) / max(len(reason_words | past_words), 1)
+        if overlap >= 0.5:
+            return True
+
+    return False
+
+
 def memory_control(
     action: str, key: str = "", value: str = "", category: str = "general", query: str = "", **kwargs
 ) -> str:
@@ -245,7 +295,7 @@ def memory_control(
     _init_db()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection(DB_PATH) as conn:
             cursor = conn.cursor()
 
             if action == "save":

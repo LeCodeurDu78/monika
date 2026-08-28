@@ -1,30 +1,30 @@
 """Rappels avec échéance pour Monika, stockés en SQLite."""
 
-import os
-import sqlite3
 from datetime import datetime
-from config import APP_DIR
 
-DB_PATH = str(APP_DIR / "reminders.db")
+from core.db import db_path, get_connection, init_table
+from core.native_scheduler import register_once, unregister
+from core.settings import settings
+
+DB_PATH = db_path("reminders.db")
+
+_CREATE_SQL = """
+    CREATE TABLE IF NOT EXISTS reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message TEXT NOT NULL,
+        due_at TEXT NOT NULL,
+        notified INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+"""
 
 
 def _init_db() -> None:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS reminders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message TEXT NOT NULL,
-                due_at TEXT NOT NULL,
-                notified INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
+    init_table(DB_PATH, _CREATE_SQL)
 
 
 def _parse_due_at(due_at: str) -> datetime:
-    """Parse une date/heure ISO (ex: '2026-08-20T09:00:00'). Lève ValueError si invalide."""
+    """Parse une date/heure ISO (ex: '2026-08-20T09:00:00')."""
     return datetime.fromisoformat(due_at.strip())
 
 
@@ -39,7 +39,7 @@ def reminder_control(
     _init_db()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection(DB_PATH) as conn:
             cursor = conn.cursor()
 
             if action == "add":
@@ -57,6 +57,13 @@ def reminder_control(
                     (message.strip(), parsed.isoformat()),
                 )
                 conn.commit()
+                new_id = cursor.lastrowid
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
+                    # l'échéance, même si le process principal n'est pas actif (voir wake_runner.py).
+                    register_once(f"reminder_{new_id}", parsed, kind="reminder", ref_id=new_id)
+
                 return (
                     f"⏰ Rappel créé : « {message.strip()} » pour le {parsed.strftime('%d/%m/%Y à %H:%M')}."
                 )
@@ -83,6 +90,10 @@ def reminder_control(
                 conn.commit()
                 if cursor.rowcount == 0:
                     return f"Aucun rappel trouvé avec l'identifiant #{reminder_id}."
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    unregister(f"reminder_{reminder_id}")
+
                 return f"🗑️ Rappel #{reminder_id} supprimé."
 
             elif action == "due":
@@ -98,6 +109,11 @@ def reminder_control(
                 placeholders = ",".join("?" * len(ids))
                 cursor.execute(f"UPDATE reminders SET notified = 1 WHERE id IN ({placeholders})", ids)
                 conn.commit()
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    # Rappels consommés : on retire les déclenchements natifs ponctuels associés.
+                    for row_id in ids:
+                        unregister(f"reminder_{row_id}")
 
                 return "\n".join(f"⏰ Rappel : {msg}" for _, msg in rows)
 
