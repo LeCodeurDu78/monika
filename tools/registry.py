@@ -1,16 +1,4 @@
-"""Registre unique des outils de Monika : chaque outil est décrit une seule fois.
-
-Avant : `AVAILABLE_TOOLS` (dict nom -> fonction) et `TOOLS_SCHEMA` (liste de
-schémas JSON) étaient deux structures maintenues à la main, séparément, avec
-le nom de l'outil répété comme chaîne dans chacune — rien n'empêchait qu'un
-outil existe dans l'une sans exister dans l'autre, ou que les deux noms
-divergent par une faute de frappe.
-
-Ici, chaque outil n'est déclaré qu'une seule fois dans `TOOL_DEFS`, sous
-forme d'un `ToolDef` qui associe la fonction Python à la description destinée
-au modèle. `AVAILABLE_TOOLS` et `TOOLS_SCHEMA` en sont simplement dérivés ;
-le nom de l'outil est toujours lu depuis `func.__name__`, jamais retapé.
-"""
+"""Registre unique des outils de Monika."""
 
 import importlib
 import inspect
@@ -147,7 +135,10 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         web_search,
-        "Effectue des recherches en ligne sur Wikipédia ou sur le Web pour trouver des informations récentes ou de la culture générale.",
+        "Effectue des recherches en ligne sur Wikipédia ou sur le Web. Le paramètre 'mode' adapte "
+        "la requête et la source privilégiée selon l'intention (actualités récentes, recherche "
+        "approfondie, prix, comparatif, ou recherche générale) et ne s'applique que pour "
+        "source='duckduckgo'.",
         {
             "source": {
                 "type": "string",
@@ -155,6 +146,15 @@ TOOL_DEFS: list[ToolDef] = [
                 "description": "'wikipedia' pour de la culture générale ou des définitions, 'duckduckgo' pour de l'actualité ou des recherches Web générales.",
             },
             "query": {"type": "string", "description": "Les termes de la recherche."},
+            "mode": {
+                "type": "string",
+                "enum": ["search", "news", "research", "price", "compare"],
+                "description": "Ne s'applique que pour source='duckduckgo'. 'search' (défaut) : recherche web générale. "
+                "'news' : actualités récentes via un flux RSS d'actualités. 'research' : recherche "
+                "approfondie combinant un résumé encyclopédique et davantage de résultats web. "
+                "'price' : oriente la recherche vers des sites marchands pour trouver un prix. "
+                "'compare' : oriente la recherche vers des sites de tests/comparatifs.",
+            },
         },
         ["source", "query"],
     ),
@@ -168,7 +168,7 @@ TOOL_DEFS: list[ToolDef] = [
         {
             "action": {
                 "type": "string",
-                "enum": ["list", "add"],
+                "enum": ["list", "add", "delete"],
                 "description": "'list' pour voir les prochains événements, 'add' pour en créer un nouveau.",
             },
             "summary": {
@@ -182,6 +182,14 @@ TOOL_DEFS: list[ToolDef] = [
             "end_time": {
                 "type": "string",
                 "description": "Date et heure de fin au format ISO (ex: 2026-08-12T15:00:00).",
+            },
+            "location": {
+                "type": "string",
+                "description": "Lieu/salle de l'événement (ex: Salle 102). Optionnel.",
+            },
+            "repeat_weekly": {
+                "type": "boolean",
+                "description": "Si True, l'événement se répète chaque semaine le même jour que 'start_time' (ex: pour un cours récurrent). Par défaut False. Utilisé uniquement pour action='add'.",
             },
             "limit": {"type": "integer", "description": "Nombre d'événements à afficher (par défaut 5)."},
         },
