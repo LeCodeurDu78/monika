@@ -2,7 +2,9 @@
 
 import os
 import json
-from config import APP_DIR
+from core.settings import settings
+
+APP_DIR = settings.APP_DIR
 
 CONTACTS_FILE = str(APP_DIR / "contacts.json")
 

@@ -6,7 +6,12 @@ from email import message_from_bytes
 from email.header import decode_header
 from email.message import EmailMessage
 
-from config import EMAIL_USER, EMAIL_PASS, IMAP_SERVER, SMTP_SERVER
+from core.settings import settings
+
+EMAIL_USER = settings.EMAIL_USER
+EMAIL_PASS = settings.EMAIL_PASS
+IMAP_SERVER = settings.IMAP_SERVER
+SMTP_SERVER = settings.SMTP_SERVER
 
 
 def email_control(

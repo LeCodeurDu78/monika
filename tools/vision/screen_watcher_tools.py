@@ -6,14 +6,14 @@ from typing import Callable, Optional
 
 from PIL import Image
 
-from config import (
-    SCREEN_WATCH_ENABLED,
-    SCREEN_WATCH_HASH_THRESHOLD,
-    SCREEN_WATCH_INTERVAL_SECONDS,
-)
+from core.settings import settings
+
+SCREEN_WATCH_ENABLED = settings.SCREEN_WATCH_ENABLED
+SCREEN_WATCH_HASH_THRESHOLD = settings.SCREEN_WATCH_HASH_THRESHOLD
+SCREEN_WATCH_INTERVAL_SECONDS = settings.SCREEN_WATCH_INTERVAL_SECONDS
 from core.db import db_path, get_connection, init_table
 from core.watcher import start_watcher
-from tools.system.screen_context import capture_screen_bytes, get_screen_context
+from tools.system.screen_context_tools import capture_screen_bytes, get_screen_context
 from tools.vision.vision_tools import analyze_image
 
 DB_PATH = db_path("screen_log.db")

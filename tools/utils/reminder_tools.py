@@ -3,6 +3,8 @@
 from datetime import datetime
 
 from core.db import db_path, get_connection, init_table
+from core.native_scheduler import register_once, unregister
+from core.settings import settings
 
 DB_PATH = db_path("reminders.db")
 
@@ -55,6 +57,13 @@ def reminder_control(
                     (message.strip(), parsed.isoformat()),
                 )
                 conn.commit()
+                new_id = cursor.lastrowid
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
+                    # l'échéance, même si le process principal n'est pas actif (voir wake_runner.py).
+                    register_once(f"reminder_{new_id}", parsed, kind="reminder", ref_id=new_id)
+
                 return (
                     f"⏰ Rappel créé : « {message.strip()} » pour le {parsed.strftime('%d/%m/%Y à %H:%M')}."
                 )
@@ -81,6 +90,10 @@ def reminder_control(
                 conn.commit()
                 if cursor.rowcount == 0:
                     return f"Aucun rappel trouvé avec l'identifiant #{reminder_id}."
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    unregister(f"reminder_{reminder_id}")
+
                 return f"🗑️ Rappel #{reminder_id} supprimé."
 
             elif action == "due":
@@ -96,6 +109,11 @@ def reminder_control(
                 placeholders = ",".join("?" * len(ids))
                 cursor.execute(f"UPDATE reminders SET notified = 1 WHERE id IN ({placeholders})", ids)
                 conn.commit()
+
+                if settings.NATIVE_SCHEDULING_ENABLED:
+                    # Rappels consommés : on retire les déclenchements natifs ponctuels associés.
+                    for row_id in ids:
+                        unregister(f"reminder_{row_id}")
 
                 return "\n".join(f"⏰ Rappel : {msg}" for _, msg in rows)
 

@@ -7,7 +7,10 @@ from sentence_transformers import SentenceTransformer
 
 import numpy as np
 
-from config import LOCAL_EMBEDDING_MODEL_NAME, LOCAL_EMBEDDING_DEVICE
+from core.settings import settings
+
+LOCAL_EMBEDDING_MODEL_NAME = settings.LOCAL_EMBEDDING_MODEL_NAME
+LOCAL_EMBEDDING_DEVICE = settings.LOCAL_EMBEDDING_DEVICE
 from core.db import db_path, get_connection
 
 DB_PATH = db_path("memory.db")

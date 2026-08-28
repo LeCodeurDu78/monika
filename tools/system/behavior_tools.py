@@ -4,7 +4,9 @@ import queue
 import threading
 from datetime import datetime
 
-from config import BEHAVIOR_LOG_ENABLED
+from core.settings import settings
+
+BEHAVIOR_LOG_ENABLED = settings.BEHAVIOR_LOG_ENABLED
 from core.db import db_path, get_connection, init_table
 
 DB_PATH = db_path("behavior.db")

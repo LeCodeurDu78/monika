@@ -1,7 +1,9 @@
 """Envoi de messages WhatsApp fiables via Playwright."""
 
 from urllib.parse import quote
-from config import APP_DIR
+from core.settings import settings
+
+APP_DIR = settings.APP_DIR
 from playwright.sync_api import sync_playwright
 from tools.social.contact_tools import get_phone_by_name
 

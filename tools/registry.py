@@ -1,9 +1,23 @@
-"""Registre unique des outils de Monika : chaque outil est décrit une seule fois."""
+"""Registre unique des outils de Monika : chaque outil est décrit une seule fois.
+
+Avant : `AVAILABLE_TOOLS` (dict nom -> fonction) et `TOOLS_SCHEMA` (liste de
+schémas JSON) étaient deux structures maintenues à la main, séparément, avec
+le nom de l'outil répété comme chaîne dans chacune — rien n'empêchait qu'un
+outil existe dans l'une sans exister dans l'autre, ou que les deux noms
+divergent par une faute de frappe.
+
+Ici, chaque outil n'est déclaré qu'une seule fois dans `TOOL_DEFS`, sous
+forme d'un `ToolDef` qui associe la fonction Python à la description destinée
+au modèle. `AVAILABLE_TOOLS` et `TOOLS_SCHEMA` en sont simplement dérivés ;
+le nom de l'outil est toujours lu depuis `func.__name__`, jamais retapé.
+"""
 
 import importlib
 import inspect
 import os
 import sys
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 from tools.system.system_tools import open_application, system_control, get_system_stats
 from tools.utils.weather_tools import get_weather
@@ -13,72 +27,56 @@ from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
-from tools.knowledge.memory import memory_control
+from tools.knowledge.memory_tools import memory_control
 from tools.knowledge.rag_tools import rag_control
-from tools.knowledge.graph_rag import graph_search, graph_backfill
+from tools.knowledge.graph_tools import graph_search, graph_backfill
 from tools.vision.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool, patch_existing_file
-from tools.system.browser_control import browser_control
+from tools.system.browser_tools import browser_control
 from tools.utils.joke_tools import get_joke
 from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.reminder_tools import reminder_control
 from tools.utils.scheduler_tools import scheduler_control
-from tools.system.screen_context import get_screen_context
-from tools.system.behavior_log import behavior_control
+from tools.utils.topic_tools import topic_watch_control
+from tools.system.screen_context_tools import get_screen_context
+from tools.system.behavior_tools import behavior_control
 from agents.proactive import proactive_control
 
 
-def _schema(name: str, description: str, properties: dict, required: list | None = None) -> dict:
-    """Construit un schéma de function calling au format attendu par l'API OpenAI."""
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": properties,
-                "required": required or [],
+@dataclass
+class ToolDef:
+    """Un outil : sa fonction Python + la description destinée au modèle (function calling)."""
+
+    func: Callable[..., Any]
+    description: str
+    properties: dict = field(default_factory=dict)
+    required: list = field(default_factory=list)
+
+    @property
+    def name(self) -> str:
+        return self.func.__name__
+
+    def to_schema(self) -> dict:
+        """Construit le schéma de function calling (format API OpenAI) de cet outil."""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": self.properties,
+                    "required": self.required,
+                },
             },
-        },
-    }
+        }
 
 
-AVAILABLE_TOOLS = {
-    "open_application": open_application,
-    "get_weather": get_weather,
-    "manage_files": manage_files,
-    "system_control": system_control,
-    "email_control": email_control,
-    "web_search": web_search,
-    "get_system_stats": get_system_stats,
-    "calendar_control": calendar_control,
-    "create_full_project": create_full_project,
-    "run_script": run_script,
-    "memory_control": memory_control,
-    "rag_control": rag_control,
-    "graph_search": graph_search,
-    "graph_backfill": graph_backfill,
-    "analyze_image": analyze_image,
-    "create_custom_tool": create_custom_tool,
-    "patch_existing_file": patch_existing_file,
-    "browser_control": browser_control,
-    "get_joke": get_joke,
-    "spotify_control": spotify_control,
-    "send_whatsapp_message": send_whatsapp_message,
-    "manage_contacts": manage_contacts,
-    "reminder_control": reminder_control,
-    "scheduler_control": scheduler_control,
-    "get_screen_context": get_screen_context,
-    "behavior_control": behavior_control,
-    "proactive_control": proactive_control,
-}
-
-TOOLS_SCHEMA = [
-    _schema(
-        "open_application",
+TOOL_DEFS: list[ToolDef] = [
+    ToolDef(
+        open_application,
         "Ouvre une application installée sur l'ordinateur de l'utilisateur.",
         {
             "app_name": {
@@ -88,14 +86,14 @@ TOOLS_SCHEMA = [
         },
         ["app_name"],
     ),
-    _schema(
-        "get_weather",
+    ToolDef(
+        get_weather,
         "Obtient la météo actuelle pour une ville donnée.",
         {"city": {"type": "string", "description": "Le nom de la ville (ex: Paris, Lyon, Montreal)"}},
         ["city"],
     ),
-    _schema(
-        "manage_files",
+    ToolDef(
+        manage_files,
         "Liste, crée des dossiers ou déplace des fichiers sur l'ordinateur.",
         {
             "action": {
@@ -111,8 +109,8 @@ TOOLS_SCHEMA = [
         },
         ["action", "path"],
     ),
-    _schema(
-        "system_control",
+    ToolDef(
+        system_control,
         "Contrôle les fonctionnalités du système Linux (volume, média, capture d'écran).",
         {
             "action": {
@@ -127,8 +125,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "email_control",
+    ToolDef(
+        email_control,
         "Permet de lire les derniers e-mails de la boîte de réception ou d'en envoyer un nouveau.",
         {
             "action": {
@@ -146,8 +144,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "web_search",
+    ToolDef(
+        web_search,
         "Effectue des recherches en ligne sur Wikipédia ou sur le Web pour trouver des informations récentes ou de la culture générale.",
         {
             "source": {
@@ -159,14 +157,12 @@ TOOLS_SCHEMA = [
         },
         ["source", "query"],
     ),
-    _schema(
-        "get_system_stats",
+    ToolDef(
+        get_system_stats,
         "Obtient les métriques d'utilisation en temps réel du système (CPU, RAM, Disque, Batterie).",
-        {},
-        [],
     ),
-    _schema(
-        "calendar_control",
+    ToolDef(
+        calendar_control,
         "Consulte la liste des événements ou ajoute un rendez-vous dans Google Calendar.",
         {
             "action": {
@@ -190,8 +186,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "create_full_project",
+    ToolDef(
+        create_full_project,
         "Initialise un projet complet : crée le dossier dans Code, génère un dépôt GitHub et configure un Vault Obsidian.",
         {
             "project_name": {
@@ -205,8 +201,8 @@ TOOLS_SCHEMA = [
         },
         ["project_name"],
     ),
-    _schema(
-        "run_script",
+    ToolDef(
+        run_script,
         "Exécute une commande ou un script Bash dans le terminal local.",
         {
             "command": {
@@ -220,8 +216,8 @@ TOOLS_SCHEMA = [
         },
         ["command"],
     ),
-    _schema(
-        "memory_control",
+    ToolDef(
+        memory_control,
         "Stocke ou recherche des informations importantes à long terme (préférences de l'utilisateur, chemins de projets, règles de code, faits personnels). La recherche ('search') est sémantique : elle retrouve les souvenirs par sens, pas seulement par mot-clé exact.",
         {
             "action": {
@@ -244,8 +240,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "rag_control",
+    ToolDef(
+        rag_control,
         "RAG (Retrieval-Augmented Generation) sur les documents personnels de l'utilisateur : indexe des fichiers (PDF, Word, texte, markdown...) puis retrouve par sens les passages pertinents pour répondre à une question, avec la source exacte. Utilise cet outil dès que l'utilisateur pose une question sur le contenu d'un de ses fichiers/documents déjà indexés, ou demande d'indexer/ajouter un document à sa base de connaissances.",
         {
             "action": {
@@ -268,8 +264,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "graph_search",
+    ToolDef(
+        graph_search,
         "Interroge le graphe de connaissances (entités + relations extraites des documents indexés via rag_control) pour répondre à des questions RELATIONNELLES précises entre des éléments identifiés (ex: 'qui a recommandé quoi à qui', 'quel projet dépend de quel outil', 'où habite X'). Complète rag_search : préfère rag_control(search) pour retrouver un passage de texte par similarité, et graph_search pour une relation précise entre entités déjà connues du graphe.",
         {
             "query": {
@@ -279,8 +275,8 @@ TOOLS_SCHEMA = [
         },
         ["query"],
     ),
-    _schema(
-        "graph_backfill",
+    ToolDef(
+        graph_backfill,
         "Force l'extraction immédiate des entités/relations pour les documents déjà indexés via rag_control mais pas encore intégrés au graphe de connaissances (normalement fait automatiquement par petits lots à chaque graph_search, mais utile après une grosse indexation pour ne pas attendre).",
         {
             "limit": {
@@ -288,10 +284,9 @@ TOOLS_SCHEMA = [
                 "description": "Nombre maximum de chunks à traiter en une fois (par défaut 200).",
             }
         },
-        [],
     ),
-    _schema(
-        "analyze_image",
+    ToolDef(
+        analyze_image,
         "Analyse visuellement une image locale ou une capture d'écran (extraire du texte, lire des erreurs, décrire un schéma, identifier des éléments à l'écran).",
         {
             "image_path": {
@@ -305,8 +300,8 @@ TOOLS_SCHEMA = [
         },
         ["image_path"],
     ),
-    _schema(
-        "create_custom_tool",
+    ToolDef(
+        create_custom_tool,
         "Permet d'écrire et sauvegarder un nouvel outil Python réutilisable lorsque la demande nécessite une fonctionnalité inexistante.",
         {
             "tool_name": {
@@ -324,8 +319,8 @@ TOOLS_SCHEMA = [
         },
         ["tool_name", "python_code", "description"],
     ),
-    _schema(
-        "patch_existing_file",
+    ToolDef(
+        patch_existing_file,
         "Modifie un fichier .py déjà existant DANS LE PROJET Monika à partir d'une instruction en langage "
         "naturel (contrairement à create_custom_tool qui crée un nouvel outil isolé). Sauvegarde toujours "
         "l'original, valide et TESTE le patch avant de le rendre définitif, et restaure automatiquement le "
@@ -343,8 +338,8 @@ TOOLS_SCHEMA = [
         },
         ["file_path", "instruction"],
     ),
-    _schema(
-        "browser_control",
+    ToolDef(
+        browser_control,
         "Contrôle un navigateur Firefox géré par Monika elle-même (lancé automatiquement au premier "
         "besoin, avec un profil persistant dédié — aucun navigateur déjà ouvert requis côté utilisateur) : "
         "lister/changer d'onglet, naviguer, lire le contenu visible d'une page, lister les éléments "
@@ -399,8 +394,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "get_joke",
+    ToolDef(
+        get_joke,
         "Raconte une blague amusante pour développeurs ou geeks.",
         {
             "language": {
@@ -412,10 +407,9 @@ TOOLS_SCHEMA = [
                 "description": "Catégorie de blague ('neutral', 'chuck', 'all'). Par défaut 'neutral'.",
             },
         },
-        [],
     ),
-    _schema(
-        "spotify_control",
+    ToolDef(
+        spotify_control,
         "Permet de contrôler Spotify : lire de la musique, mettre en pause, passer un morceau, changer le volume ou chercher des playlists.",
         {
             "action": {
@@ -434,8 +428,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "manage_contacts",
+    ToolDef(
+        manage_contacts,
         "Gère le carnet d'adresses : ajouter, chercher, lister ou supprimer des contacts (Nom -> Numéro).",
         {
             "action": {
@@ -451,8 +445,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "send_whatsapp_message",
+    ToolDef(
+        send_whatsapp_message,
         "Envoie un message WhatsApp à un destinataire en utilisant soit son prénom/nom enregistrés, soit directement son numéro.",
         {
             "recipient": {
@@ -463,8 +457,8 @@ TOOLS_SCHEMA = [
         },
         ["recipient", "message"],
     ),
-    _schema(
-        "reminder_control",
+    ToolDef(
+        reminder_control,
         "Crée, liste ou supprime des rappels avec échéance (ex: \"rappelle-moi de renouveler mon passeport avant le 20 mars\"). Un rappel arrivé à échéance est annoncé automatiquement par Monika, sans que l'utilisateur ait à demander.",
         {
             "action": {
@@ -488,8 +482,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "scheduler_control",
+    ToolDef(
+        scheduler_control,
         "Planifie l'exécution AUTONOME d'une instruction par Monika elle-même : contrairement à reminder_control qui se contente d'annoncer un message, ici Monika appelle réellement les outils nécessaires (météo, e-mails, recherche web...) pour accomplir la tâche, sans intervention de l'utilisateur. Une seule fois, tous les jours, ou en boucle à intervalle régulier.",
         {
             "action": {
@@ -525,18 +519,16 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "get_screen_context",
+    ToolDef(
+        get_screen_context,
         "Renvoie un résumé STRUCTURÉ de ce qui est actuellement affiché à l'écran : application "
         "active, titre de fenêtre, texte exact extrait par OCR (URLs, messages d'erreur, noms de "
         "fichiers), et une estimation de l'activité en cours. Plus précis que analyze_image pour "
         "du texte exact ; utile pour comprendre le contexte de travail actuel de l'utilisateur "
         "avant d'agir ou de répondre.",
-        {},
-        [],
     ),
-    _schema(
-        "behavior_control",
+    ToolDef(
+        behavior_control,
         "Consulte ('show') ou vide ('reset') le journal des habitudes d'usage de Monika (outils "
         "préférés, heures d'usage, corrections répétées de l'utilisateur). Utilise ce journal pour "
         "affiner tes réponses, et propose 'reset' si l'utilisateur exprime une préoccupation de "
@@ -550,8 +542,8 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
-    _schema(
-        "proactive_control",
+    ToolDef(
+        proactive_control,
         "Active ou désactive le mode silencieux des interventions autonomes de Monika (celles "
         "qu'elle prend de sa propre initiative, sans qu'on le lui demande). Utilise 'silence' si "
         "l'utilisateur demande explicitement à ne plus être dérangé/interrompu spontanément (ex: "
@@ -566,10 +558,32 @@ TOOLS_SCHEMA = [
         },
         ["action"],
     ),
+    ToolDef(
+        topic_watch_control,
+        "Gère la liste des sujets que Monika surveille quotidiennement pour son briefing du matin "
+        "(ex: \"surveille les sorties de la PS6\", \"arrête de surveiller le bitcoin\", \"quels sujets "
+        "surveilles-tu ?\"). Chaque sujet surveillé est recherché une fois par jour au moment du "
+        "briefing, et Monika ne signale que les nouveautés détectées depuis la veille.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["add", "remove", "list"],
+                "description": "'add' pour ajouter un sujet à surveiller, 'remove' pour en retirer un, 'list' pour voir tous les sujets actuellement surveillés.",
+            },
+            "topic": {
+                "type": "string",
+                "description": "Le sujet à surveiller ou à retirer, en langage naturel (ex: 'sortie de la PS6', 'prix du Bitcoin'). Requis pour action='add' et action='remove'.",
+            },
+        },
+        ["action"],
+    ),
 ]
 
+AVAILABLE_TOOLS: dict[str, Callable[..., Any]] = {t.name: t.func for t in TOOL_DEFS}
+TOOLS_SCHEMA: list[dict] = [t.to_schema() for t in TOOL_DEFS]
 
-def _generate_schema_from_func(func, name: str, description: str) -> dict:
+
+def _generate_schema_from_func(func, description: str) -> dict:
     """Génère un schéma JSON à partir de la signature d'une fonction (utilisé pour les outils custom, qui n'ont pas de schéma explicite)."""
     sig = inspect.signature(func)
     type_map = {int: "integer", float: "number", bool: "boolean"}
@@ -584,7 +598,7 @@ def _generate_schema_from_func(func, name: str, description: str) -> dict:
         if param.default is inspect.Parameter.empty:
             required.append(param_name)
 
-    return _schema(name, description, properties, required)
+    return ToolDef(func, description, properties, required).to_schema()
 
 
 def sync_custom_tools(target_schema_list: list) -> None:
@@ -617,7 +631,7 @@ def sync_custom_tools(target_schema_list: list) -> None:
 
             if not any(s["function"]["name"] == tool_name for s in target_schema_list):
                 doc = (func.__doc__ or f"Outil personnalisé {tool_name}").strip()
-                target_schema_list.append(_generate_schema_from_func(func, tool_name, doc))
+                target_schema_list.append(_generate_schema_from_func(func, doc))
                 print(f"🧩 [Outil Personnalisé Chargé] : {tool_name}")
         except Exception as e:
             print(f"⚠️ Impossible de charger l'outil personnalisé {tool_name} : {e}")

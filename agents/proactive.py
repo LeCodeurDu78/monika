@@ -4,10 +4,11 @@ import json
 import threading
 from typing import Callable, Optional
 
-from config import client, MODEL_NAME, PROACTIVE_DEDUP_COOLDOWN_MINUTES, PROACTIVE_SILENT_MODE
-from tools.knowledge.memory import log_proactive_action, was_recently_notified
-from tools.system.behavior_log import get_behavior_summary
-from tools.vision.screen_watcher import get_latest_screen_context
+from config import client, MODEL_NAME
+from core.settings import settings
+from tools.knowledge.memory_tools import log_proactive_action, was_recently_notified
+from tools.system.behavior_tools import get_behavior_summary
+from tools.vision.screen_watcher_tools import get_latest_screen_context
 
 DECISION_SYSTEM_PROMPT = (
     "Tu es le moteur de décision autonome de Monika, une assistante IA. Tu reçois un "
@@ -39,7 +40,7 @@ DECISION_SYSTEM_PROMPT = (
     "6. 'subject' : requis pour 'email_send' uniquement."
 )
 
-_silent_mode = PROACTIVE_SILENT_MODE
+_silent_mode = settings.PROACTIVE_SILENT_MODE
 _silent_lock = threading.Lock()
 
 
@@ -172,7 +173,7 @@ def evaluate_and_act(announce: Callable[[str], None]) -> Optional[str]:
     if not reason or action_type == "none" or not payload:
         return None
 
-    if was_recently_notified(reason, PROACTIVE_DEDUP_COOLDOWN_MINUTES):
+    if was_recently_notified(reason, settings.PROACTIVE_DEDUP_COOLDOWN_MINUTES):
         print(f"🔕 [proactive] Intervention filtrée (déjà signalée récemment) : {reason}")
         return None
 

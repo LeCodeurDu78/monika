@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     # --- Contrôle du navigateur -------------------------------------------
     BROWSER_HEADLESS: bool = False
 
+    # --- Rappels natifs à l'OS ------
+    NATIVE_SCHEDULING_ENABLED: bool = True
+
+    # --- Briefing du matin --------------------------
+    MORNING_BRIEFING_ENABLED: bool = True
+    MORNING_BRIEFING_TIME: str = "09:00"
+
     @model_validator(mode="after")
     def _resolve_dependent_defaults(self) -> "Settings":
         if self.VOICE_XTTS_LANGUAGE is None:

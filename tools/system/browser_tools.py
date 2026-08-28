@@ -1,7 +1,10 @@
 """Contrôle du navigateur pour Monika."""
 
 from pathlib import Path
-from config import APP_DIR, BROWSER_HEADLESS as HEADLESS
+from core.settings import settings
+
+APP_DIR = settings.APP_DIR
+HEADLESS = settings.BROWSER_HEADLESS
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 SESSION_DIR = str(APP_DIR / ".monika_browser_session")

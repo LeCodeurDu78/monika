@@ -7,7 +7,7 @@ from typing import Optional
 
 import numpy as np
 
-from tools.knowledge.memory import embed_text, blob_to_embedding, cosine_similarity
+from tools.knowledge.memory_tools import embed_text, blob_to_embedding, cosine_similarity
 from tools.knowledge.rag_tools import DB_PATH as RAG_DB_PATH
 from core.db import db_path, get_connection, init_table
 

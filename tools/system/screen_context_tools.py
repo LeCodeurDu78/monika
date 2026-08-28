@@ -8,7 +8,10 @@ from typing import Optional
 
 from PIL import Image
 
-from config import SCREEN_CONTEXT_OCR_ENABLED, SCREEN_CONTEXT_OCR_LANG
+from core.settings import settings
+
+SCREEN_CONTEXT_OCR_ENABLED = settings.SCREEN_CONTEXT_OCR_ENABLED
+SCREEN_CONTEXT_OCR_LANG = settings.SCREEN_CONTEXT_OCR_LANG
 
 _OCR_WARNED = False
 

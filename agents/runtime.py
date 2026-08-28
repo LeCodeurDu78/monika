@@ -3,9 +3,9 @@
 import json
 
 from config import client, MODEL_NAME
-from tools.system.behavior_log import log_behavior_event
+from tools.system.behavior_tools import log_behavior_event
 
-MAX_CONTEXT_MESSAGES = 50
+MAX_CONTEXT_MESSAGES = 18
 TOOL_RESULT_MAX_CHARS = 15000
 TOOL_RESULT_TRUNCATED_CHARS = 12000
 
@@ -60,10 +60,7 @@ def execute_tool_call(tool_call, available_tools: dict, interactive: bool = True
             )
 
     if func_name not in available_tools:
-        return (
-            f"⚠️ L'outil '{func_name}' n'est pas disponible pour cet agent. "
-            "Délègue plutôt cette action à l'agent spécialisé compétent."
-        )
+        return f"⚠️ L'outil '{func_name}' n'est pas disponible."
 
     print(f"⚙️ [Action] : Exécution de {func_name}({func_args})...")
     log_behavior_event("tool_call", tool_name=func_name)

@@ -6,7 +6,7 @@ from typing import Optional
 
 import numpy as np
 
-from tools.knowledge.memory import (
+from tools.knowledge.memory_tools import (
     embed_text,
     embed_texts,
     embedding_dimension,
