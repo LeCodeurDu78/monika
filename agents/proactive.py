@@ -5,10 +5,70 @@ import threading
 from typing import Callable, Optional
 
 from config import client, MODEL_NAME
+from core.db import db_path, get_connection, init_table
 from core.settings import settings
 from tools.knowledge.memory_tools import log_proactive_action, was_recently_notified
 from tools.system.behavior_tools import get_behavior_summary
 from tools.vision.screen_watcher_tools import get_latest_screen_context
+
+# --- Command Center des initiatives ---------------------------------------------------------
+
+INITIATIVES_DB_PATH = db_path("initiatives.db")
+
+_INITIATIVES_CREATE_SQL = """
+    CREATE TABLE IF NOT EXISTS initiatives (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trigger TEXT NOT NULL,
+        objective TEXT NOT NULL,
+        status TEXT NOT NULL,
+        action_type TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+
+def _init_initiatives_db() -> None:
+    init_table(INITIATIVES_DB_PATH, _INITIATIVES_CREATE_SQL)
+
+
+def _log_initiative(trigger: str, objective: str, status: str, action_type: str) -> None:
+    """Trace une décision du moteur de proactivité (déclencheur, objectif, statut, horodatage)."""
+    _init_initiatives_db()
+    with get_connection(INITIATIVES_DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO initiatives (trigger, objective, status, action_type) VALUES (?, ?, ?, ?)",
+            (trigger.strip(), objective.strip(), status, action_type.strip()),
+        )
+        conn.commit()
+
+
+def list_initiatives(days: int = 1, status: str = "") -> str:
+    """Liste les initiatives autonomes des derniers `days` jours (par défaut aujourd'hui),
+    optionnellement filtrées par statut — pour répondre à « qu'as-tu fait/prévu aujourd'hui ? »."""
+    _init_initiatives_db()
+    with get_connection(INITIATIVES_DB_PATH) as conn:
+        cursor = conn.cursor()
+        if status:
+            cursor.execute(
+                "SELECT trigger, objective, status, created_at FROM initiatives "
+                "WHERE created_at >= datetime('now', ?) AND status = ? ORDER BY created_at DESC",
+                (f"-{int(days)} days", status),
+            )
+        else:
+            cursor.execute(
+                "SELECT trigger, objective, status, created_at FROM initiatives "
+                "WHERE created_at >= datetime('now', ?) ORDER BY created_at DESC",
+                (f"-{int(days)} days",),
+            )
+        rows = cursor.fetchall()
+
+    if not rows:
+        return "Aucune initiative autonome sur cette période."
+
+    return "\n".join(
+        f"• [{row_status}] {objective} — déclenché par : {trigger} ({created_at})"
+        for trigger, objective, row_status, created_at in rows
+    )
 
 DECISION_SYSTEM_PROMPT = (
     "Tu es le moteur de décision autonome de Monika, une assistante IA. Tu reçois un "
@@ -173,15 +233,22 @@ def evaluate_and_act(announce: Callable[[str], None]) -> Optional[str]:
     if not reason or action_type == "none" or not payload:
         return None
 
+    objective = f"{action_type}" + (f" → {recipient}" if recipient else "")
+
     if was_recently_notified(reason, settings.PROACTIVE_DEDUP_COOLDOWN_MINUTES):
         print(f"🔕 [proactive] Intervention filtrée (déjà signalée récemment) : {reason}")
+        _log_initiative(reason, objective, "filtrée", action_type)
         return None
 
     if is_silent_mode():
         print(f"🔕 [proactive] Mode silencieux actif, intervention retenue (non exécutée) : {reason}")
+        _log_initiative(reason, objective, "silencieuse", action_type)
         return None
 
     result = _dispatch_action(action_type, payload, recipient, subject, announce)
     if result is not None:
         log_proactive_action(reason, action_type, payload)
+        _log_initiative(reason, objective, "exécutée", action_type)
+    else:
+        _log_initiative(reason, objective, "échouée", action_type)
     return result

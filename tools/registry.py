@@ -27,7 +27,7 @@ from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
-from tools.knowledge.memory_tools import memory_control
+from tools.knowledge.memory_tools import memory_control, export_memory_markdown
 from tools.knowledge.rag_tools import rag_control
 from tools.knowledge.graph_tools import graph_search, graph_backfill
 from tools.vision.vision_tools import analyze_image
@@ -42,7 +42,8 @@ from tools.utils.scheduler_tools import scheduler_control
 from tools.utils.topic_tools import topic_watch_control
 from tools.system.screen_context_tools import get_screen_context
 from tools.system.behavior_tools import behavior_control
-from agents.proactive import proactive_control
+from tools.system.curator import run_nightly_curator
+from agents.proactive import proactive_control, list_initiatives
 
 
 @dataclass
@@ -576,6 +577,38 @@ TOOL_DEFS: list[ToolDef] = [
             },
         },
         ["action"],
+    ),
+    ToolDef(
+        export_memory_markdown,
+        "Régénère le miroir Markdown en lecture seule de la mémoire long terme de Monika (un "
+        "fichier par catégorie, ex: preferences.md, projets.md), pour inspection humaine directe "
+        "sans passer par memory_control. Normalement régénéré automatiquement chaque nuit par le "
+        "curator ; à utiliser seulement si l'utilisateur demande explicitement une régénération "
+        "immédiate.",
+    ),
+    ToolDef(
+        list_initiatives,
+        "Liste les initiatives autonomes récentes de Monika (décisions prises de sa propre "
+        "initiative, exécutées, filtrées, différées ou échouées) — utile pour répondre à « qu'as-tu "
+        "fait/prévu aujourd'hui ? ».",
+        {
+            "days": {
+                "type": "integer",
+                "description": "Nombre de jours à couvrir (par défaut 1, aujourd'hui uniquement).",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["exécutée", "filtrée", "silencieuse", "échouée"],
+                "description": "Filtre optionnel par statut. Laisser vide pour tout afficher.",
+            },
+        },
+    ),
+    ToolDef(
+        run_nightly_curator,
+        "Génère immédiatement le rapport de curation nocturne de Monika (comportement récent, "
+        "initiatives autonomes du jour, faits contredits/à revoir de la mémoire tracée). "
+        "Normalement déclenché automatiquement une fois par nuit ; à utiliser seulement si "
+        "l'utilisateur demande explicitement une curation immédiate.",
     ),
 ]
 

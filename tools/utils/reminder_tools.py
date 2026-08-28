@@ -61,7 +61,7 @@ def reminder_control(
 
                 if settings.NATIVE_SCHEDULING_ENABLED:
                     # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
-                    # l'échéance, même si le process principal n'est pas actif (voir wake_runner.py).
+                    # l'échéance, même si le process principal n'est pas actif (voir core/wake_runner.py).
                     register_once(f"reminder_{new_id}", parsed, kind="reminder", ref_id=new_id)
 
                 return (

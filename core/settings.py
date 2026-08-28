@@ -88,8 +88,12 @@ class Settings(BaseSettings):
     NATIVE_SCHEDULING_ENABLED: bool = True
 
     # --- Briefing du matin --------------------------
-    MORNING_BRIEFING_ENABLED: bool = True
-    MORNING_BRIEFING_TIME: str = "09:00"
+    MORNING_BRIEFING_ENABLED: bool = False
+    MORNING_BRIEFING_TIME: str = "07:30"
+
+    # --- Curator nocturne ------
+    CURATOR_ENABLED: bool = True
+    CURATOR_TIME: str = "03:30"
 
     @model_validator(mode="after")
     def _resolve_dependent_defaults(self) -> "Settings":

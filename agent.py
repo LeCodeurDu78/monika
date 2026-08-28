@@ -1,11 +1,4 @@
-"""Boucle de conversation principale de Monika.
-
-Le mode texte et le mode vocal partagent exactement la même logique de
-session, de watchers et d'annonces : seule la façon de lire l'entrée
-utilisateur et de restituer les réponses change. Cette différence est
-capturée par `Channel`, ce qui évite de dupliquer deux fois la même
-mécanique (verrou, watchers, briefing, etc.).
-"""
+"""Boucle de conversation principale de Monika."""
 
 import threading
 from dataclasses import dataclass, field
@@ -19,6 +12,7 @@ from core.settings import settings
 from core.wake_store import acquire as acquire_lock, drain_wake_results as drain_wake_outbox, release as release_lock
 from core.watcher import start_daily_trigger, start_watcher
 from tools.system.behavior_tools import log_behavior_event, looks_like_correction
+from tools.system.curator import ensure_curator_scheduled
 from tools.utils.briefing_tools import run_morning_briefing
 from tools.utils.reminder_tools import reminder_control
 from tools.utils.scheduler_tools import pop_due_tasks
@@ -148,9 +142,8 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
         if result:
             channel.deliver(f"☀️ Briefing du matin :\n{result}")
 
-    stop_events = [start_watcher(settings.REMINDER_CHECK_INTERVAL_SECONDS, _reminder_tick)]
-    stop_events.append(start_watcher(settings.SCHEDULER_CHECK_INTERVAL_SECONDS, _scheduler_tick))
-    stop_events.append(_start_screen_watcher())
+    stop_events = [start_watcher(settings.REMINDER_CHECK_INTERVAL_SECONDS, _reminder_tick),
+                   start_watcher(settings.SCHEDULER_CHECK_INTERVAL_SECONDS, _scheduler_tick), _start_screen_watcher()]
     if settings.PROACTIVE_ENABLED:
         stop_events.append(start_watcher(settings.PROACTIVE_HEARTBEAT_INTERVAL_SECONDS, _proactive_tick))
     else:
@@ -190,6 +183,7 @@ def _run_monika(channel: Channel, greeting: str) -> None:
 
     acquire_lock()
     _sync_native_daily_triggers()
+    ensure_curator_scheduled()
     _announce_pending_wake_messages(channel)
 
     stop_events = _start_background_watchers(channel)

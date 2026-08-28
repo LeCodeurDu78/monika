@@ -1,7 +1,10 @@
 """Mémoire persistante long terme pour Monika."""
 
+import json
+import re
 import sqlite3
 import threading
+from datetime import date
 from typing import Optional, Sequence
 from sentence_transformers import SentenceTransformer
 
@@ -164,6 +167,220 @@ def _init_db() -> None:
         conn.commit()
 
 
+# --- Faits atomiques tracés (à côté du stockage par embedding) -----------------------------
+
+FACT_STATUS_ACTIVE = "actif"
+FACT_STATUS_CONTRADICTED = "contredit"
+FACT_STATUS_TO_REVIEW = "à revoir"
+
+FACT_EXTRACTION_SYSTEM_PROMPT = (
+    "Tu extrais UN SEUL fait atomique clair et durable d'un texte, pour la mémoire factuelle "
+    "tracée de Monika (ex: préférence, information personnelle, statut d'un projet). Réponds "
+    "UNIQUEMENT avec un objet JSON valide, sans texte avant/après, sans balise markdown/```.\n\n"
+    "Format exact attendu :\n"
+    '{"has_fact": false, "subject": "", "value": "", "fact_date": null, "confidence": "haute"}\n\n'
+    "Règles :\n"
+    "1. 'has_fact' : true seulement si un fait clair, factuel et durable est présent (pas une "
+    "question, pas une opinion vague, pas du bavardage).\n"
+    "2. 'subject' : sujet court et normalisé du fait (ex: 'ville', 'anniversaire', 'projet X - statut').\n"
+    "3. 'value' : la valeur exacte du fait (ex: 'Paris', '12 mars', 'en pause').\n"
+    "4. 'fact_date' : date ISO ('YYYY-MM-DD') si le texte mentionne une date précise pour ce fait, "
+    "sinon null (la date du jour sera utilisée par défaut).\n"
+    "5. 'confidence' : 'haute' si le fait est explicite et sans ambiguïté, 'faible' si incertain "
+    "(le fait sera alors marqué 'à revoir' plutôt qu'actif).\n"
+    "6. N'invente rien : si aucun fait clair n'est présent, réponds avec has_fact=false."
+)
+
+
+def _init_facts_db() -> None:
+    """Crée les tables de faits atomiques tracés (dans la même base memory.db)."""
+    with get_connection(DB_PATH) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS facts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subject TEXT NOT NULL,
+                value TEXT NOT NULL,
+                fact_date TEXT,
+                status TEXT NOT NULL DEFAULT 'actif',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject COLLATE NOCASE);
+            CREATE TABLE IF NOT EXISTS fact_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fact_id INTEGER NOT NULL REFERENCES facts(id),
+                observed_text TEXT,
+                observed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        conn.commit()
+
+
+def _strip_code_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+    return text.strip()
+
+
+def _extract_atomic_fact(source_text: str) -> Optional[dict]:
+    """Appelle le LLM pour extraire {subject, value, fact_date, confidence} du texte, ou None
+    si aucun fait clair n'est présent."""
+    from config import client, MODEL_NAME
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": FACT_EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": source_text[:2000]},
+            ],
+        )
+        raw = _strip_code_fences(response.choices[0].message.content or "")
+        data = json.loads(raw)
+        if not data.get("has_fact"):
+            return None
+
+        subject = str(data.get("subject", "")).strip()
+        value = str(data.get("value", "")).strip()
+        if not subject or not value:
+            return None
+
+        raw_date = data.get("fact_date")
+        return {
+            "subject": subject,
+            "value": value,
+            "fact_date": str(raw_date).strip() if raw_date else None,
+            "confidence": str(data.get("confidence", "haute")).strip().lower(),
+        }
+    except Exception:
+        return None
+
+
+def _find_active_fact(cursor: sqlite3.Cursor, subject: str) -> Optional[tuple]:
+    cursor.execute(
+        "SELECT id, value FROM facts WHERE subject = ? COLLATE NOCASE AND status = ?",
+        (subject, FACT_STATUS_ACTIVE),
+    )
+    return cursor.fetchone()
+
+
+def record_atomic_fact(source_text: str) -> Optional[str]:
+    """Extrait un fait atomique de `source_text` (s'il y en a un) et le trace : renforcement
+    (fact_observations) si un fait identique est déjà 'actif' pour ce sujet, contradiction si la
+    valeur a changé (l'ancien fait passe à 'contredit', le nouveau devient 'actif'/'à revoir'),
+    sinon nouveau fait. Renvoie une courte note (ou None si rien d'extrait, ou si rien de nouveau
+    à signaler lors d'un simple renforcement)."""
+    extracted = _extract_atomic_fact(source_text)
+    if extracted is None:
+        return None
+
+    _init_facts_db()
+    subject, value, fact_date, confidence = (
+        extracted["subject"], extracted["value"], extracted["fact_date"], extracted["confidence"]
+    )
+    fact_date = fact_date or date.today().isoformat()
+    status = FACT_STATUS_ACTIVE if confidence != "faible" else FACT_STATUS_TO_REVIEW
+
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        existing = _find_active_fact(cursor, subject)
+
+        if existing is None:
+            cursor.execute(
+                "INSERT INTO facts (subject, value, fact_date, status) VALUES (?, ?, ?, ?)",
+                (subject, value, fact_date, status),
+            )
+            conn.commit()
+            return f"🧩 Nouveau fait tracé : [{subject}] = {value} ({status})"
+
+        existing_id, existing_value = existing
+        if existing_value.strip().lower() == value.strip().lower():
+            cursor.execute(
+                "INSERT INTO fact_observations (fact_id, observed_text) VALUES (?, ?)",
+                (existing_id, source_text[:500]),
+            )
+            cursor.execute("UPDATE facts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (existing_id,))
+            conn.commit()
+            return None
+
+        cursor.execute(
+            "UPDATE facts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (FACT_STATUS_CONTRADICTED, existing_id),
+        )
+        cursor.execute(
+            "INSERT INTO facts (subject, value, fact_date, status) VALUES (?, ?, ?, ?)",
+            (subject, value, fact_date, status),
+        )
+        conn.commit()
+        return f"⚠️ Fait contredit sur [{subject}] : « {existing_value} » → « {value} »"
+
+
+def facts_needing_review() -> str:
+    """Liste les faits marqués 'contredit' ou 'à revoir' — utilisé par le curator nocturne
+    (tools/system/curator.py) et pour l'inspection humaine."""
+    _init_facts_db()
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT subject, value, status, updated_at FROM facts WHERE status IN (?, ?) "
+            "ORDER BY updated_at DESC",
+            (FACT_STATUS_CONTRADICTED, FACT_STATUS_TO_REVIEW),
+        )
+        rows = cursor.fetchall()
+
+    if not rows:
+        return ""
+    return "\n".join(
+        f"• [{status}] {subject} = {value} (maj {updated_at})"
+        for subject, value, status, updated_at in rows
+    )
+
+
+# --- Export Markdown en lecture seule (miroir humain de la mémoire) -------------------------
+#
+# Génère un fichier .md par catégorie (ex: preferences.md si la catégorie 'preference' est
+# utilisée, projets.md si 'projet' l'est) — sur le modèle de graph_backfill (tools/knowledge/
+# graph_tools.py) : régénérable à la demande, et rappelé périodiquement par le curator nocturne.
+
+def _slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", text.strip().lower()).strip("_")
+    return slug or "general"
+
+
+def export_memory_markdown() -> str:
+    """Génère un miroir Markdown en lecture seule de la mémoire long terme, un fichier par
+    catégorie, dans <APP_DIR>/memory_export/."""
+    _init_db()
+    export_dir = settings.APP_DIR / "memory_export"
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT category, key, value FROM memories ORDER BY category, key")
+        rows = cursor.fetchall()
+
+    by_category: dict[str, list[tuple[str, str]]] = {}
+    for category, key, value in rows:
+        by_category.setdefault(category or "general", []).append((key, value))
+
+    written = []
+    for category, entries in by_category.items():
+        filename = _slugify(category) + ".md"
+        lines = [f"# Mémoire — {category}", "", "_Généré automatiquement, lecture seule._", ""]
+        lines += [f"- **{key}** : {value}" for key, value in entries]
+        (export_dir / filename).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        written.append(filename)
+
+    if not written:
+        return "Aucune mémoire à exporter."
+    return f"📄 Export Markdown généré ({len(written)} fichier(s)) dans {export_dir} : {', '.join(written)}"
+
+
 def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
     """Vectorise les souvenirs sans embedding, et revectorise ceux dont la dimension stockée ne correspond plus au modèle actuel (changement de backend)."""
     cursor = conn.cursor()
@@ -317,6 +534,12 @@ def memory_control(
                     (category, clean_key, clean_value, embedding_blob),
                 )
                 conn.commit()
+
+                try:
+                    record_atomic_fact(f"{clean_key} : {clean_value}")
+                except Exception as e:
+                    print(f"⚠️ [memory] Échec du traçage de fait atomique : {e}")
+
                 return f"🧠 Mémoire enregistrée avec succès : [{key}] = {value}"
 
             elif action == "search":

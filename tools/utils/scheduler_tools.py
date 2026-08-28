@@ -110,7 +110,7 @@ def scheduler_control(
 
                 if settings.NATIVE_SCHEDULING_ENABLED:
                     # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
-                    # l'échéance, même si le process principal n'est pas actif (voir wake_runner.py).
+                    # l'échéance, même si le process principal n'est pas actif (voir core/wake_runner.py).
                     # Les tâches 'interval' ne sont pas relayées nativement (boucle courte, conçue
                     # pour tourner tant que Monika est active).
                     if schedule_type == "once":
