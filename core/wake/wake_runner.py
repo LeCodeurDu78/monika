@@ -2,7 +2,7 @@
 
 import argparse
 
-from core.wake_store import main_process_is_alive
+from core.wake.wake_store import main_process_is_alive
 
 
 def main() -> None:
@@ -14,7 +14,7 @@ def main() -> None:
     if main_process_is_alive():
         return
 
-    from core.wake_handlers import handle_wake
+    from core.wake.wake_handlers import handle_wake
 
     handle_wake(args.kind, args.id)
 

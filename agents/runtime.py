@@ -5,7 +5,7 @@ import json
 from config import client, MODEL_NAME
 from tools.system.behavior_tools import log_behavior_event
 
-MAX_CONTEXT_MESSAGES = 18
+MAX_CONTEXT_MESSAGES = 50
 TOOL_RESULT_MAX_CHARS = 15000
 TOOL_RESULT_TRUNCATED_CHARS = 12000
 
@@ -17,22 +17,27 @@ def prune_context(messages: list) -> list:
             content = str(msg.get("content", ""))
             if len(content) > TOOL_RESULT_MAX_CHARS:
                 msg["content"] = (
-                    content[:TOOL_RESULT_TRUNCATED_CHARS]
-                    + "\n... [Résultat tronqué par Context Pruning pour économiser le contexte]"
+                        content[:TOOL_RESULT_TRUNCATED_CHARS]
+                        + "\n... [Résultat tronqué par Context Pruning pour économiser le contexte]"
                 )
 
     if len(messages) <= MAX_CONTEXT_MESSAGES:
         return messages
 
-    system_msgs = [m for m in messages[:1]]
+    PRUNE_NOTICE = (
+        "\n\nℹ️ [Context Pruning] Les anciens échanges de la session ont été archivés pour "
+        "maintenir des performances optimales."
+    )
     recent_messages = messages[-(MAX_CONTEXT_MESSAGES - 1):]
 
-    pruned = system_msgs + [
-        {
-            "role": "system",
-            "content": "ℹ️ [Context Pruning] Les anciens échanges de la session ont été archivés pour maintenir des performances optimales.",
-        },
-    ] + recent_messages
+    if messages and messages[0].get("role") == "system":
+        system_msg = messages[0]
+        content = system_msg["content"]
+        if PRUNE_NOTICE.strip() not in content:
+            content += PRUNE_NOTICE
+        pruned = [{"role": "system", "content": content}] + recent_messages
+    else:
+        pruned = recent_messages
 
     print("✂️ [Context Pruning] L'historique de contexte a été élagué avec succès.")
     return pruned

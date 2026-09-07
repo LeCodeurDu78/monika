@@ -179,7 +179,7 @@ def pop_due_tasks() -> list[tuple[int, str]]:
                     # La tâche est consommée : on retire le déclenchement natif ponctuel associé.
                     unregister(f"task_{task_id}")
             elif schedule_type == "daily":
-                new_next = _next_daily_run(time_of_day, after=datetime.fromisoformat(next_run))
+                new_next = _next_daily_run(time_of_day, after=datetime.now())
                 cursor.execute(
                     "UPDATE scheduled_tasks SET next_run = ? WHERE id = ?", (new_next.isoformat(), task_id)
                 )

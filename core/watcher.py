@@ -1,15 +1,10 @@
-"""Fabrique de threads de fond pour Monika : boucle générique à intervalle fixe, et
-spécialisation pour déclencher une action une fois par jour tant que le process principal tourne.
-
-Le trigger quotidien complète le déclenchement natif de l'OS (core.native_scheduler), qui prend
-le relais quand le process principal est arrêté. Les deux chemins partagent le même état via
-core.wake_store, pour ne jamais exécuter la même journée deux fois."""
+"""Fabrique de threads de fond pour Monika."""
 
 import threading
 from datetime import datetime
 from typing import Callable
 
-from core.wake_store import mark_ran_today, should_run_today
+from core.wake.wake_store import mark_ran_today, should_run_today
 
 _CHECK_INTERVAL_SECONDS = 60
 

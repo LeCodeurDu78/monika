@@ -1,7 +1,7 @@
 """Logique exécutée lors d'un réveil ponctuel par le planificateur natif de l'OS."""
 
 from config import SYSTEM_PROMPT
-from core.wake_store import mark_ran_today, push_wake_result as push_outbox, should_run_today
+from core.wake.wake_store import mark_ran_today, push_wake_result as push_outbox, should_run_today
 
 
 def handle_wake(kind: str, ref_id: int) -> None:
@@ -33,10 +33,10 @@ def _handle_task(task_id: int) -> None:
 
     for tid, instruction in pop_due_tasks():
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
             {
                 "role": "system",
                 "content": (
+                    SYSTEM_PROMPT + " "
                     "Contexte : l'échéance d'une tâche planifiée précédemment vient d'arriver, et le "
                     "process principal de Monika n'était pas actif — tu as été relancée ponctuellement "
                     "par le planificateur natif de l'OS, uniquement pour exécuter cette tâche. Utilise "

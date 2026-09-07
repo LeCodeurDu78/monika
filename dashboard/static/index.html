@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Monika</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <h1>Monika</h1>
+      <span id="status-pill" class="pill pill--offline">
+        <span class="pill__dot"></span>
+        <span id="status-text">Connexion…</span>
+      </span>
+    </header>
+
+    <section class="avatar-card">
+      <!--
+        Emplacement réservé au futur modèle 3D animé.
+        Déposer un fichier "monika.glb" (ou "monika.gltf") dans dashboard/static/avatar/
+        puis rafraîchir : avatar.js détecte automatiquement le modèle et bascule
+        du placeholder vers le rendu Three.js (voir avatar.js pour le point d'intégration).
+      -->
+      <div id="avatar-slot" class="avatar-slot">
+        <div id="avatar-placeholder" class="avatar-placeholder">
+          <div class="avatar-placeholder__orb"></div>
+        </div>
+        <canvas id="avatar-canvas" class="avatar-canvas" hidden></canvas>
+      </div>
+      <p id="avatar-caption" class="avatar-caption">Avatar 3D : pas encore installé</p>
+    </section>
+
+    <section class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-card__label">Outils disponibles</span>
+        <span id="stat-tools" class="stat-card__value">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Dashboard actif depuis</span>
+        <span id="stat-uptime" class="stat-card__value">—</span>
+      </div>
+    </section>
+
+    <section class="features">
+      <h2>Fonctions</h2>
+      <ul id="features-list" class="features__list"></ul>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

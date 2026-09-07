@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # --- Analyse contextuelle de l'écran ------------------
     SCREEN_CONTEXT_OCR_ENABLED: bool = True
-    SCREEN_CONTEXT_OCR_LANG: str = "fra+eng"
+    SCREEN_CONTEXT_OCR_LANG: str = "fra"
 
     # --- Proactivité -------------------
     PROACTIVE_ENABLED: bool = False
@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     # --- Curator nocturne ------
     CURATOR_ENABLED: bool = True
     CURATOR_TIME: str = "03:30"
+
+    # --- Dashboard web ---------------------------------------------------------------
+    DASHBOARD_ENABLED: bool = True
+    DASHBOARD_HOST: str = "0.0.0.0"
+    DASHBOARD_PORT: int = 8420
 
     @model_validator(mode="after")
     def _resolve_dependent_defaults(self) -> "Settings":

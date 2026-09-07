@@ -9,8 +9,9 @@ from agents.orchestrator import process_user_message
 from agents.proactive import evaluate_and_act
 from core.native_scheduler import register_daily, unregister
 from core.settings import settings
-from core.wake_store import acquire as acquire_lock, drain_wake_results as drain_wake_outbox, release as release_lock
+from core.wake.wake_store import acquire as acquire_lock, drain_wake_results as drain_wake_outbox, release as release_lock
 from core.watcher import start_daily_trigger, start_watcher
+from dashboard.server import start_dashboard
 from tools.system.behavior_tools import log_behavior_event, looks_like_correction
 from tools.system.curator import ensure_curator_scheduled
 from tools.utils.briefing_tools import run_morning_briefing
@@ -111,10 +112,10 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
         for task_id, instruction in pop_due_tasks():
             print(f"🗓️ [Tâche planifiée #{task_id}] Exécution : {instruction}")
             task_messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "system",
                     "content": (
+                        SYSTEM_PROMPT + " "
                         "Contexte : l'échéance d'une tâche planifiée précédemment vient d'arriver. "
                         "Aucun utilisateur n'est présent dans cette conversation pour répondre. "
                         "Exécute l'instruction ci-dessous MAINTENANT, directement avec les outils "
@@ -144,6 +145,12 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
 
     stop_events = [start_watcher(settings.REMINDER_CHECK_INTERVAL_SECONDS, _reminder_tick),
                    start_watcher(settings.SCHEDULER_CHECK_INTERVAL_SECONDS, _scheduler_tick), _start_screen_watcher()]
+    if settings.DASHBOARD_ENABLED:
+        stop_events.append(start_dashboard())
+        print(f"🖥️  Dashboard : http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT} "
+              f"(accessible en Tailscale via l'IP Tailscale de cette machine, même port)")
+    else:
+        stop_events.append(threading.Event())
     if settings.PROACTIVE_ENABLED:
         stop_events.append(start_watcher(settings.PROACTIVE_HEARTBEAT_INTERVAL_SECONDS, _proactive_tick))
     else:

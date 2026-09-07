@@ -18,6 +18,10 @@ AGENT_SYSTEM_PROMPT = (
 
 def process_user_message(messages: list, max_turns: int = MAX_TURNS, interactive: bool = True) -> str:
     """Traite le message de l'utilisateur avec un unique agent doté de tous les outils."""
+    for i in range(len(messages) - 1, 0, -1):
+        if messages[i].get("role") == "system":
+            del messages[i]
+
     if not messages or messages[0].get("role") != "system":
         messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
     else:
