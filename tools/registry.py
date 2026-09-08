@@ -21,6 +21,7 @@ from tools.knowledge.graph_tools import graph_search, graph_backfill
 from tools.vision.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool, patch_existing_file
 from tools.system.browser_tools import browser_control
+from tools.system.reservation_tools import reservation_control
 from tools.utils.joke_tools import get_joke
 from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
@@ -352,16 +353,31 @@ TOOL_DEFS: list[ToolDef] = [
         "Contrôle un navigateur Firefox géré par Monika elle-même (lancé automatiquement au premier "
         "besoin, avec un profil persistant dédié — aucun navigateur déjà ouvert requis côté utilisateur) : "
         "lister/changer d'onglet, naviguer, lire le contenu visible d'une page, lister les éléments "
-        "interactifs (champs/boutons/liens) avec leur vrai nom accessible, cliquer sur un élément ou "
-        "remplir un champ identifié par sa description (texte visible, rôle, label, placeholder — jamais "
-        "par coordonnées x/y), ou fermer le navigateur. IMPORTANT : avant de cliquer ou remplir un champ "
+        "interactifs (champs/boutons/liens) avec leur vrai nom accessible, cliquer sur un élément, "
+        "remplir un champ, lire la valeur actuelle d'un champ, choisir une option dans une liste "
+        "déroulante, envoyer une touche clavier (utile pour les sélecteurs de date/autocomplétion), "
+        "attendre qu'un élément ou un texte apparaisse (contenu chargé en AJAX, ex: créneaux "
+        "disponibles), ou fermer le navigateur. IMPORTANT : avant de cliquer ou remplir un champ "
         "sur une page inconnue, utilise d'abord 'list_interactive_elements' pour connaître les libellés "
         "exacts des éléments plutôt que de deviner une description au hasard — cela évite des tentatives "
         "ratées et économise des tours d'action. 'navigate' et 'click_element' renvoient déjà un aperçu "
         "compact de la page résultante : ne rappelle PAS 'read_page_content' juste après pour vérifier "
         "qu'une action a marché, l'aperçu suffit dans la grande majorité des cas. Pour 'read_page_content', "
         "utilise full=False (aperçu court, par défaut) sauf besoin réel d'extraire un contenu détaillé "
-        "(liste de résultats, article, formulaire complexe), auquel cas passe full=True.",
+        "(liste de résultats, article, formulaire complexe), auquel cas passe full=True.\n"
+        "SCÉNARIO DE RÉSERVATION (restaurant, rendez-vous...) : pour aller jusqu'au bout d'une "
+        "réservation réelle (pas seulement naviguer/cliquer), le déroulé typique est : naviguer vers "
+        "le site -> list_interactive_elements pour repérer le formulaire de recherche de créneaux -> "
+        "fill_field / select_option pour date, heure, nombre de personnes ou motif -> wait_for si les "
+        "créneaux se chargent en AJAX -> click_element sur le créneau choisi -> fill_field pour les "
+        "coordonnées de contact -> AVANT de cliquer sur le bouton final de validation/paiement, "
+        "récapituler à l'utilisateur ce qui va être réservé (date, heure, nombre de personnes/motif, "
+        "coordonnées utilisées, prix éventuel) et obtenir sa confirmation explicite, SAUF si "
+        "l'utilisateur avait déjà donné ces informations précises dans sa demande initiale -> "
+        "click_element sur le bouton de validation -> lire la page de confirmation (read_page_content) "
+        "pour en extraire le numéro/texte de confirmation -> enregistrer la réservation avec l'outil "
+        "'reservation_control' (action='save'). Ne saisis JAMAIS d'informations de paiement (numéro de "
+        "carte bancaire...) sans confirmation explicite de l'utilisateur pour cette réservation précise.",
         {
             "action": {
                 "type": "string",
@@ -373,6 +389,10 @@ TOOL_DEFS: list[ToolDef] = [
                     "list_interactive_elements",
                     "click_element",
                     "fill_field",
+                    "get_field_value",
+                    "select_option",
+                    "press_key",
+                    "wait_for",
                     "close_browser",
                 ],
                 "description": "L'action à effectuer sur le navigateur.",
@@ -388,17 +408,115 @@ TOOL_DEFS: list[ToolDef] = [
             "description": {
                 "type": "string",
                 "description": "Description de l'élément ciblé : texte visible, libellé du bouton/lien, label du champ, etc. "
-                "(requis pour action='click_element' et action='fill_field').",
+                "(requis pour action='click_element', 'fill_field', 'get_field_value' et 'select_option' ; "
+                "optionnel pour 'press_key' et 'wait_for').",
             },
             "text": {
                 "type": "string",
-                "description": "Texte à saisir dans le champ ciblé (requis pour action='fill_field').",
+                "description": "Texte à saisir dans le champ ciblé (requis pour action='fill_field'), ou texte à attendre "
+                "sur la page (optionnel pour action='wait_for', alternative à 'description').",
             },
             "full": {
                 "type": "boolean",
                 "description": "Pour action='read_page_content' uniquement. false (défaut) = aperçu compact "
                 "(quelques centaines de caractères), true = contenu complet de la page (coûteux en contexte, "
                 "à réserver à l'extraction d'un contenu détaillé).",
+            },
+            "option": {
+                "type": "string",
+                "description": "Libellé (ou valeur) de l'option à choisir (requis pour action='select_option').",
+            },
+            "key": {
+                "type": "string",
+                "description": "Touche clavier à envoyer, ex: 'Enter', 'Escape', 'Tab', 'ArrowDown' "
+                "(requis pour action='press_key').",
+            },
+            "timeout_ms": {
+                "type": "integer",
+                "description": "Délai d'attente en millisecondes pour action='wait_for' (défaut 10000).",
+            },
+        },
+        ["action"],
+    ),
+    ToolDef(
+        reservation_control,
+        "Archive localement une réservation web réelle (restaurant, rendez-vous...) une fois qu'elle a "
+        "été effectivement confirmée sur le site via 'browser_control', et propose de l'ajouter au "
+        "calendrier et/ou de créer un rappel avant l'échéance. À utiliser en fin de scénario de "
+        "réservation, jamais avant la confirmation réelle côté site (ne pas enregistrer une réservation "
+        "qui n'a pas été validée). N'annule et ne modifie rien côté prestataire : action='cancel' ne fait "
+        "que marquer l'enregistrement local comme annulé — une vraie annulation doit être faite via "
+        "'browser_control' ou en contactant le prestataire.",
+        {
+            "action": {
+                "type": "string",
+                "enum": ["save", "list", "get", "cancel", "delete"],
+                "description": "L'action à effectuer.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Titre court de la réservation, ex: 'Table pour 2 chez Le Petit Zinc' "
+                "(requis pour action='save').",
+            },
+            "provider": {
+                "type": "string",
+                "description": "Nom du restaurant, praticien ou prestataire.",
+            },
+            "scheduled_at": {
+                "type": "string",
+                "description": "Date/heure ISO de la réservation, ex: '2026-09-12T20:00:00'.",
+            },
+            "party_size": {
+                "type": "integer",
+                "description": "Nombre de personnes (réservation restaurant), si applicable.",
+            },
+            "contact_name": {
+                "type": "string",
+                "description": "Nom utilisé pour la réservation.",
+            },
+            "contact_phone": {
+                "type": "string",
+                "description": "Téléphone utilisé pour la réservation.",
+            },
+            "contact_email": {
+                "type": "string",
+                "description": "E-mail utilisé pour la réservation.",
+            },
+            "confirmation_reference": {
+                "type": "string",
+                "description": "Numéro/texte de confirmation affiché par le site après validation, si disponible.",
+            },
+            "source_url": {
+                "type": "string",
+                "description": "URL de la page de confirmation ou du site de réservation.",
+            },
+            "notes": {
+                "type": "string",
+                "description": "Toute information complémentaire utile (motif du rendez-vous, demandes particulières...).",
+            },
+            "duration_minutes": {
+                "type": "integer",
+                "description": "Durée estimée de l'événement en minutes pour l'ajout au calendrier (défaut 120).",
+            },
+            "add_to_calendar": {
+                "type": "boolean",
+                "description": "Si true, ajoute automatiquement un événement Google Calendar (requiert 'scheduled_at').",
+            },
+            "add_reminder": {
+                "type": "boolean",
+                "description": "Si true, crée un rappel avant l'échéance (requiert 'scheduled_at').",
+            },
+            "reminder_minutes_before": {
+                "type": "integer",
+                "description": "Nombre de minutes avant 'scheduled_at' pour déclencher le rappel (défaut 120).",
+            },
+            "reservation_id": {
+                "type": "integer",
+                "description": "Identifiant de la réservation (requis pour 'get', 'cancel' et 'delete').",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Nombre maximum de réservations à lister pour action='list' (défaut 10).",
             },
         },
         ["action"],

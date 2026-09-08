@@ -269,6 +269,113 @@ def fill_field(description: str, text: str) -> str:
         return f"❌ Erreur lors du remplissage : {e}"
 
 
+def get_field_value(description: str) -> str:
+    """Lit la valeur actuelle d'un champ (input/textarea/select) — utile pour vérifier
+    une saisie (date, heure, nombre de personnes...) avant de valider une étape."""
+    try:
+        page = _active_page()
+        element = _locate(page, description)
+        if element is None:
+            return f"❌ Champ introuvable pour la description : '{description}'."
+        try:
+            value = element.input_value(timeout=DEFAULT_ACTION_TIMEOUT_MS)
+        except Exception:
+            value = element.text_content(timeout=DEFAULT_ACTION_TIMEOUT_MS) or ""
+        return f"Valeur actuelle de '{description}' : '{value.strip()}'"
+    except PlaywrightTimeoutError:
+        return f"⚠️ Champ trouvé mais valeur illisible dans le délai imparti ('{description}')."
+    except Exception as e:
+        return f"❌ Erreur lors de la lecture du champ : {e}"
+
+
+def select_option(description: str, option: str) -> str:
+    """Sélectionne une option dans une liste déroulante (<select>, ou combobox ARIA)
+    identifiée par sa description. Essaie d'abord par libellé visible, puis par valeur."""
+    try:
+        page = _active_page()
+        element = _locate(page, description)
+        if element is None:
+            return f"❌ Liste déroulante introuvable pour la description : '{description}'."
+
+        tag = (element.evaluate("el => el.tagName.toLowerCase()") or "").lower()
+
+        if tag == "select":
+            try:
+                element.select_option(label=option, timeout=DEFAULT_ACTION_TIMEOUT_MS)
+            except Exception:
+                try:
+                    element.select_option(value=option, timeout=DEFAULT_ACTION_TIMEOUT_MS)
+                except Exception:
+                    element.select_option(option, timeout=DEFAULT_ACTION_TIMEOUT_MS)
+            return f"✅ Option '{option}' sélectionnée pour '{description}'.\nAperçu : {_snippet(page)}"
+
+        # Combobox ARIA / menu personnalisé : ouvrir puis cliquer l'option affichée
+        element.click(timeout=DEFAULT_ACTION_TIMEOUT_MS)
+        option_locator = None
+        for strategy in (
+            lambda: page.get_by_role("option", name=option, exact=False),
+            lambda: page.get_by_text(option, exact=False),
+        ):
+            try:
+                loc = strategy()
+                if loc.count() > 0:
+                    option_locator = loc.first
+                    break
+            except Exception:
+                continue
+        if option_locator is None:
+            return f"❌ Option '{option}' introuvable après ouverture de la liste '{description}'."
+        option_locator.click(timeout=DEFAULT_ACTION_TIMEOUT_MS)
+        return f"✅ Option '{option}' sélectionnée pour '{description}'.\nAperçu : {_snippet(page)}"
+    except PlaywrightTimeoutError:
+        return f"⚠️ Liste déroulante trouvée mais sélection impossible dans le délai imparti ('{description}')."
+    except Exception as e:
+        return f"❌ Erreur lors de la sélection : {e}"
+
+
+def press_key(key: str, description: str = None) -> str:
+    """Envoie une touche clavier (ex: 'Enter', 'Escape', 'Tab', 'ArrowDown') à un champ
+    (si description fournie, il est d'abord focus) ou à la page active. Utile pour les
+    sélecteurs de date/heure et les champs à autocomplétion qui ne réagissent pas à fill_field."""
+    try:
+        page = _active_page()
+        if description:
+            element = _locate(page, description)
+            if element is None:
+                return f"❌ Élément introuvable pour la description : '{description}'."
+            element.focus(timeout=DEFAULT_ACTION_TIMEOUT_MS)
+            element.press(key, timeout=DEFAULT_ACTION_TIMEOUT_MS)
+        else:
+            page.keyboard.press(key)
+        return f"✅ Touche '{key}' envoyée" + (f" à '{description}'." if description else " à la page.") + f"\nAperçu : {_snippet(page)}"
+    except PlaywrightTimeoutError:
+        return f"⚠️ Impossible d'envoyer la touche '{key}' dans le délai imparti."
+    except Exception as e:
+        return f"❌ Erreur lors de l'envoi de la touche : {e}"
+
+
+def wait_for(description: str = None, text: str = None, timeout_ms: int = 10000) -> str:
+    """Attend qu'un élément (description) ou un texte apparaisse sur la page — utile
+    pour laisser le temps aux créneaux/disponibilités chargés en AJAX de s'afficher
+    avant de lister les éléments interactifs ou de cliquer dessus."""
+    try:
+        page = _active_page()
+        if not description and not text:
+            return "❌ Fournir 'description' ou 'text' pour l'action 'wait_for'."
+        if text:
+            page.get_by_text(text, exact=False).first.wait_for(state="visible", timeout=timeout_ms)
+            return f"✅ Le texte '{text}' est apparu.\nAperçu : {_snippet(page)}"
+        deadline_element = _locate(page, description)
+        if deadline_element is not None:
+            deadline_element.wait_for(state="visible", timeout=timeout_ms)
+            return f"✅ L'élément '{description}' est apparu.\nAperçu : {_snippet(page)}"
+        return f"⚠️ Élément '{description}' non trouvé après attente."
+    except PlaywrightTimeoutError:
+        return f"⏱️ Rien de correspondant n'est apparu dans le délai imparti ({timeout_ms} ms)."
+    except Exception as e:
+        return f"❌ Erreur lors de l'attente : {e}"
+
+
 def browser_control(
     action: str,
     url: str = None,
@@ -276,6 +383,9 @@ def browser_control(
     description: str = None,
     text: str = None,
     full: bool = False,
+    option: str = None,
+    key: str = None,
+    timeout_ms: int = 10000,
 ) -> str:
     """Point d'entrée unique pour l'agent."""
     if action == "list_tabs":
@@ -300,6 +410,20 @@ def browser_control(
         if not description or text is None:
             return "❌ Paramètres 'description' et 'text' requis pour l'action 'fill_field'."
         return fill_field(description, text)
+    if action == "get_field_value":
+        if not description:
+            return "❌ Paramètre 'description' requis pour l'action 'get_field_value'."
+        return get_field_value(description)
+    if action == "select_option":
+        if not description or not option:
+            return "❌ Paramètres 'description' et 'option' requis pour l'action 'select_option'."
+        return select_option(description, option)
+    if action == "press_key":
+        if not key:
+            return "❌ Paramètre 'key' requis pour l'action 'press_key'."
+        return press_key(key, description=description)
+    if action == "wait_for":
+        return wait_for(description=description, text=text, timeout_ms=timeout_ms)
     if action == "close_browser":
         return close_browser()
     return f"❌ Action inconnue : '{action}'."

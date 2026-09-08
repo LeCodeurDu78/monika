@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     APP_DIR: Path = Field(default=Path.home() / ".monika")
 
     # --- LLM ---------------------------------------------------------------------
-    MODEL_NAME: str = "qwen3.6-35b-a3b"
+    MODEL_NAME: str = "abliterated-model"
     VISION_MODEL_NAME: str = "gemini-3.5-flash"
     LLM_BASE_URL: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None

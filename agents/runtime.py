@@ -97,7 +97,22 @@ def run_react_loop(
             messages.append({"role": "assistant", "content": bot_reply})
             return bot_reply
 
-        messages.append(response_message)
+        assistant_msg = {
+            "role": "assistant",
+            "content": response_message.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in response_message.tool_calls
+            ],
+        }
+        messages.append(assistant_msg)
         for tool_call in response_message.tool_calls:
             function_result = execute_tool_call(tool_call, available_tools, interactive=interactive)
             messages.append(
