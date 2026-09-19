@@ -4,6 +4,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from avatar.server import start_avatar_server
 from config import SYSTEM_PROMPT, EXIT_WORDS
 from agents.orchestrator import process_user_message
 from agents.proactive import evaluate_and_act
@@ -11,7 +12,6 @@ from core.native_scheduler import register_daily, unregister
 from core.settings import settings
 from core.wake.wake_store import acquire as acquire_lock, drain_wake_results as drain_wake_outbox, release as release_lock
 from core.watcher import start_daily_trigger, start_watcher
-from dashboard.server import start_dashboard
 from tools.system.behavior_tools import log_behavior_event, looks_like_correction
 from tools.system.curator import ensure_curator_scheduled
 from tools.utils.briefing_tools import run_morning_briefing
@@ -145,12 +145,6 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
 
     stop_events = [start_watcher(settings.REMINDER_CHECK_INTERVAL_SECONDS, _reminder_tick),
                    start_watcher(settings.SCHEDULER_CHECK_INTERVAL_SECONDS, _scheduler_tick), _start_screen_watcher()]
-    if settings.DASHBOARD_ENABLED:
-        stop_events.append(start_dashboard())
-        print(f"🖥️  Dashboard : http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT} "
-              f"(accessible en Tailscale via l'IP Tailscale de cette machine, même port)")
-    else:
-        stop_events.append(threading.Event())
     if settings.PROACTIVE_ENABLED:
         stop_events.append(start_watcher(settings.PROACTIVE_HEARTBEAT_INTERVAL_SECONDS, _proactive_tick))
     else:
@@ -185,6 +179,7 @@ def _announce_pending_wake_messages(channel: Channel) -> None:
 def _run_monika(channel: Channel, greeting: str) -> None:
     """Lance une session Monika complète (verrou, watchers, boucle, nettoyage) pour un `Channel` donné."""
     print(greeting)
+    start_avatar_server()
     if channel.speak_replies:
         speak("Bonjour, je t'écoute.")
 

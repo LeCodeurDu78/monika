@@ -5,6 +5,7 @@ import numpy as np
 import sounddevice as sd
 import webrtcvad
 
+from avatar import state as avatar_state
 from core.settings import settings
 
 SAMPLE_RATE = settings.SAMPLE_RATE
@@ -27,26 +28,32 @@ def record_until_silence() -> np.ndarray:
     speech_started = False
 
     print("Je t'écoute... (parle, je m'arrête tout seul après le silence)")
+    avatar_state.set_state("listening")
 
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=FRAME_SAMPLES) as stream:
-        for _ in range(max_frames):
-            block, overflowed = stream.read(FRAME_SAMPLES)
-            if overflowed:
-                print(
-                    "Buffer audio saturé, un fragment a peut-être été perdu.",
-                    file=sys.stderr,
-                )
+    try:
+        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=FRAME_SAMPLES) as stream:
+            for _ in range(max_frames):
+                block, overflowed = stream.read(FRAME_SAMPLES)
+                if overflowed:
+                    print(
+                        "Buffer audio saturé, un fragment a peut-être été perdu.",
+                        file=sys.stderr,
+                    )
 
-            is_speech = vad.is_speech(block.tobytes(), SAMPLE_RATE)
-            frames.append(block.copy())
+                is_speech = vad.is_speech(block.tobytes(), SAMPLE_RATE)
+                frames.append(block.copy())
 
-            if is_speech:
-                speech_started = True
-                silent_run = 0
-            elif speech_started:
-                silent_run += 1
-                if silent_run >= silence_frames_needed:
-                    break
+                if is_speech:
+                    speech_started = True
+                    silent_run = 0
+                elif speech_started:
+                    silent_run += 1
+                    if silent_run >= silence_frames_needed:
+                        break
+    finally:
+        # Le micro est refermé : soit on part transcrire ("thinking"), soit rien
+        # n'a été dit et on repasse directement au repos.
+        avatar_state.set_state("thinking" if (frames and speech_started) else "idle")
 
     if not frames or not speech_started:
         return np.array([], dtype=np.float32)

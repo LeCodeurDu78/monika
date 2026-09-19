@@ -10,7 +10,7 @@ from core.settings import settings
 
 def db_path(filename: str) -> str:
     """Chemin d'une base SQLite."""
-    return str(settings.APP_DIR / filename)
+    return str(settings.APP_DIR / "databases" / filename)
 
 
 def get_connection(path: Union[str, Path]) -> sqlite3.Connection:
