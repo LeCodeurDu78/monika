@@ -76,9 +76,10 @@ def topic_watch_control(action: str, topic: str = "") -> str:
                 if not topic.strip():
                     return "Erreur : 'topic' est requis pour retirer un sujet surveillé (voir action='list')."
                 cursor.execute("DELETE FROM watched_topics WHERE topic = ?", (topic.strip(),))
+                deleted = cursor.rowcount
                 cursor.execute("DELETE FROM topic_watch_state WHERE topic = ?", (topic.strip(),))
                 conn.commit()
-                if cursor.rowcount == 0:
+                if deleted == 0:
                     return f"Aucun sujet surveillé nommé « {topic.strip()} »."
                 return f"🗑️ Sujet retiré de la veille : « {topic.strip()} »."
 

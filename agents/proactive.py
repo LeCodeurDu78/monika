@@ -117,6 +117,23 @@ def is_silent_mode() -> bool:
 
 def proactive_control(action: str) -> str:
     """Active/désactive le mode silencieux des interventions autonomes, ou en donne le statut."""
+    if not settings.PROACTIVE_ENABLED:
+        # Le mode silencieux ne pilote que le watcher déjà en cours d'exécution : si la
+        # proactivité est désactivée au niveau configuration, le watcher n'a jamais été
+        # démarré (voir agent.py) et 'resume'/'silence' n'ont donc aucun effet réel.
+        if action == "resume":
+            return (
+                "⚠️ La proactivité est désactivée au niveau configuration "
+                "(PROACTIVE_ENABLED=false) : Monika ne peut pas intervenir de sa propre "
+                "initiative, même hors mode silencieux. Il faut l'activer dans la configuration "
+                "puis redémarrer Monika."
+            )
+        if action == "silence":
+            return "🔕 Mode silencieux noté, mais la proactivité était déjà désactivée au niveau configuration (PROACTIVE_ENABLED=false)."
+        if action == "status":
+            return "⚪ Interventions autonomes désactivées au niveau configuration (PROACTIVE_ENABLED=false)."
+        return "Action non reconnue pour l'outil proactive_control (utilise 'silence', 'resume' ou 'status')."
+
     if action == "silence":
         set_silent_mode(True)
         return "🔕 Mode silencieux activé : Monika n'interviendra plus de sa propre initiative (le watcher continue de tourner en arrière-plan)."

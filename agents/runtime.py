@@ -30,6 +30,16 @@ def prune_context(messages: list) -> list:
     )
     recent_messages = messages[-(MAX_CONTEXT_MESSAGES - 1):]
 
+    # L'API rejette un message 'tool' qui ne suit pas l'assistant porteur du tool_call
+    # correspondant : si la coupe tombe au milieu d'un cycle d'actions, on écarte les
+    # résultats d'outils devenus orphelins en tête de tranche.
+    first_valid = 0
+    while first_valid < len(recent_messages) and recent_messages[first_valid].get("role") == "tool":
+        first_valid += 1
+    if first_valid:
+        print(f"✂️ [Context Pruning] {first_valid} résultat(s) d'outil orphelin(s) écarté(s).")
+        recent_messages = recent_messages[first_valid:]
+
     if messages and messages[0].get("role") == "system":
         system_msg = messages[0]
         content = system_msg["content"]

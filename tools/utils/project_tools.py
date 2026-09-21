@@ -10,7 +10,8 @@ OBSIDIAN_BASE_DIR = str(settings.OBSIDIAN_BASE_DIR)
 
 
 def create_full_project(project_name: str, private: bool = True) -> str:
-    """Crée un projet complet : 1."""
+    """Crée un projet complet : dossier local avec dépôt git initialisé, dépôt GitHub
+    (privé par défaut) synchronisé via `gh`, et une note Obsidian associée dans le vault."""
     clean_name = project_name.strip().replace(" ", "-").lower()
     project_path = os.path.join(CODE_BASE_DIR, clean_name)
     obsidian_path = os.path.join(OBSIDIAN_BASE_DIR, clean_name)
@@ -37,7 +38,8 @@ def create_full_project(project_name: str, private: bool = True) -> str:
             stdout=subprocess.DEVNULL,
         )
 
-        cmd = ["gh", "repo", "create", clean_name, "--public", "--source", project_path, "--push"]
+        visibility_flag = "--private" if private else "--public"
+        cmd = ["gh", "repo", "create", clean_name, visibility_flag, "--source", project_path, "--push"]
 
         gh_result = subprocess.run(cmd, capture_output=True, text=True)
         if gh_result.returncode == 0:

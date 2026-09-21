@@ -383,67 +383,45 @@ def export_memory_markdown() -> str:
 
 def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
     """Vectorise les souvenirs sans embedding, et revectorise ceux dont la dimension stockée ne correspond plus au modèle actuel (changement de backend)."""
-    cursor = conn.cursor()
-    current_dim = embedding_dimension()
+    from core.vector_store import backfill_missing_embeddings
 
-    if current_dim is not None:
-
-        cursor.execute(
-            "SELECT id, key, value FROM memories WHERE embedding IS NULL OR length(embedding) != ? LIMIT ?",
-            (current_dim * 4, BACKFILL_BATCH_SIZE),
-        )
-    else:
-        cursor.execute(
-            "SELECT id, key, value FROM memories WHERE embedding IS NULL LIMIT ?",
-            (BACKFILL_BATCH_SIZE,),
-        )
-
-    rows = cursor.fetchall()
-    if not rows:
-        return
-
-    texts = [f"{key} : {value}" for _row_id, key, value in rows]
-    vectors = embed_texts(texts)
-    if vectors is None:
-        return
-
-    for (row_id, _key, _value), vector in zip(rows, vectors):
-        cursor.execute(
-            "UPDATE memories SET embedding = ? WHERE id = ?",
-            (embedding_to_blob(vector), row_id),
-        )
-    conn.commit()
+    backfill_missing_embeddings(
+        conn,
+        table="memories",
+        id_column="id",
+        text_columns=["key", "value"],
+        text_for_embedding=lambda row: f"{row[1]} : {row[2]}",
+        batch_size=BACKFILL_BATCH_SIZE,
+    )
 
 
 def _keyword_search(conn: sqlite3.Connection, query: str) -> list[tuple[str, str, str]]:
     """Recherche par mot-clé (LIKE), utilisée en repli."""
-    query_str = f"%{query.strip().lower()}%"
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT category, key, value FROM memories
-        WHERE key LIKE ? OR value LIKE ? OR category LIKE ?
-        """,
-        (query_str, query_str, query_str),
+    from core.vector_store import keyword_search
+
+    return keyword_search(
+        conn,
+        table="memories",
+        query=query,
+        select_columns=["category", "key", "value"],
+        like_columns=["key", "value", "category"],
     )
-    return cursor.fetchall()
 
 
 def _semantic_search(
     conn: sqlite3.Connection, query_embedding: np.ndarray
 ) -> list[tuple[str, str, str, float]]:
     """Recherche par similarité cosinus sur les souvenirs disposant d'un embedding."""
-    cursor = conn.cursor()
-    cursor.execute("SELECT category, key, value, embedding FROM memories WHERE embedding IS NOT NULL")
+    from core.vector_store import semantic_search
 
-    scored = []
-    for category, key, value, blob in cursor.fetchall():
-        similarity = cosine_similarity(query_embedding, blob_to_embedding(blob))
-        if similarity >= SEMANTIC_MIN_SIMILARITY:
-            scored.append((category, key, value, similarity))
-
-    scored.sort(key=lambda row: row[3], reverse=True)
-    return scored[:SEMANTIC_TOP_K]
+    return semantic_search(
+        conn,
+        query_embedding,
+        table="memories",
+        select_columns=["category", "key", "value"],
+        min_similarity=SEMANTIC_MIN_SIMILARITY,
+        top_k=SEMANTIC_TOP_K,
+    )
 
 
 def _init_proactive_actions_db() -> None:

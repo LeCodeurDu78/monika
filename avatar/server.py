@@ -1,13 +1,4 @@
-"""Serveur web du compagnon 3D de Monika.
-
-Sert la page Three.js (avatar/static/index.html + avatar/static/model.glb) et
-une petite API JSON que la page interroge par polling pour savoir dans quel
-état se trouve Monika (idle / listening / thinking / speaking) et à quelle
-amplitude animer la mâchoire.
-
-Tourne dans un thread daemon à part, via uvicorn, pour ne jamais bloquer la
-boucle de conversation existante (qui reste 100% synchrone).
-"""
+"""Serveur web du compagnon 3D de Monika."""
 
 from __future__ import annotations
 

@@ -1,12 +1,4 @@
-"""État partagé du compagnon 3D (Monika).
-
-Ce module est le point de rencontre entre le "cerveau" de Monika (STT, TTS,
-boucle de conversation, tout en Python synchrone/threads) et le serveur web
-qui sert l'avatar Three.js à un navigateur. On garde volontairement les choses
-très simples : un seul état protégé par un verrou, et le frontend vient le
-lire via un petit polling HTTP (voir avatar/server.py). Pas besoin de
-websockets ni d'asyncio côté logique métier.
-"""
+"""État partagé du compagnon 3D (Monika)."""
 
 from __future__ import annotations
 

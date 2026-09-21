@@ -9,12 +9,9 @@ import numpy as np
 from tools.knowledge.memory_tools import (
     embed_text,
     embed_texts,
-    embedding_dimension,
     embedding_to_blob,
-    blob_to_embedding,
-    cosine_similarity,
 )
-from core.db import db_path, get_connection, init_table
+from core.db import db_path, get_connection, ensure_schema
 
 DB_PATH = db_path("rag.db")
 
@@ -51,40 +48,21 @@ _CREATE_SQL = """
 """
 
 
-def _init_db() -> None:
-    init_table(DB_PATH, _CREATE_SQL)
+_init_db = ensure_schema(DB_PATH, _CREATE_SQL)
 
 
 def _backfill_missing_embeddings(conn: sqlite3.Connection) -> None:
     """Vectorise les chunks sans embedding, et revectorise ceux dont la dimension stockée ne correspond plus au modèle actuel."""
-    cursor = conn.cursor()
-    current_dim = embedding_dimension()
+    from core.vector_store import backfill_missing_embeddings
 
-    if current_dim is not None:
-        cursor.execute(
-            "SELECT id, content FROM rag_chunks WHERE embedding IS NULL OR length(embedding) != ? LIMIT ?",
-            (current_dim * 4, BACKFILL_BATCH_SIZE),
-        )
-    else:
-        cursor.execute(
-            "SELECT id, content FROM rag_chunks WHERE embedding IS NULL LIMIT ?",
-            (BACKFILL_BATCH_SIZE,),
-        )
-
-    rows = cursor.fetchall()
-    if not rows:
-        return
-
-    contents = [content for _row_id, content in rows]
-    vectors = embed_texts(contents)
-    if vectors is None:
-        return
-
-    for (row_id, _content), vector in zip(rows, vectors):
-        cursor.execute(
-            "UPDATE rag_chunks SET embedding = ? WHERE id = ?", (embedding_to_blob(vector), row_id)
-        )
-    conn.commit()
+    backfill_missing_embeddings(
+        conn,
+        table="rag_chunks",
+        id_column="id",
+        text_columns=["content"],
+        text_for_embedding=lambda row: row[1],
+        batch_size=BACKFILL_BATCH_SIZE,
+    )
 
 
 def _extract_text(file_path: str) -> tuple[Optional[str], Optional[str]]:
@@ -178,31 +156,33 @@ def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OV
 
 
 def _keyword_search(conn: sqlite3.Connection, query: str) -> list[tuple[str, int, str]]:
-    query_str = f"%{query.strip().lower()}%"
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT source, chunk_index, content FROM rag_chunks WHERE content LIKE ? LIMIT ?",
-        (query_str, RAG_TOP_K),
+    """Recherche par mot-clé (LIKE), utilisée en repli."""
+    from core.vector_store import keyword_search
+
+    return keyword_search(
+        conn,
+        table="rag_chunks",
+        query=query,
+        select_columns=["source", "chunk_index", "content"],
+        like_columns=["content"],
+        limit=RAG_TOP_K,
     )
-    return cursor.fetchall()
 
 
 def _semantic_search(
     conn: sqlite3.Connection, query_embedding: np.ndarray
 ) -> list[tuple[str, int, str, float]]:
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT source, chunk_index, content, embedding FROM rag_chunks WHERE embedding IS NOT NULL"
+    """Recherche par similarité cosinus sur les chunks disposant d'un embedding."""
+    from core.vector_store import semantic_search
+
+    return semantic_search(
+        conn,
+        query_embedding,
+        table="rag_chunks",
+        select_columns=["source", "chunk_index", "content"],
+        min_similarity=RAG_MIN_SIMILARITY,
+        top_k=RAG_TOP_K,
     )
-
-    scored = []
-    for source, chunk_index, content, blob in cursor.fetchall():
-        similarity = cosine_similarity(query_embedding, blob_to_embedding(blob))
-        if similarity >= RAG_MIN_SIMILARITY:
-            scored.append((source, chunk_index, content, similarity))
-
-    scored.sort(key=lambda row: row[3], reverse=True)
-    return scored[:RAG_TOP_K]
 
 
 def rag_control(action: str, path: str = "", query: str = "", doc_name: str = "") -> str:

@@ -1,12 +1,4 @@
-"""Pilotage de l'avatar pendant que Monika parle.
-
-XTTS nous donne le buffer audio complet *avant* la lecture (voir
-voice/voice_tts.py). On en profite pour calculer une enveloppe d'amplitude
-(RMS par petites fenêtres) et la rejouer, synchronisée avec `sounddevice`,
-pendant que l'audio est réellement lu sur les haut-parleurs. Le résultat est
-un mouvement de mâchoire qui suit grossièrement le volume de la voix — un
-"lipsync" pauvre mais honnête, sans dépendre d'un vrai modèle de visèmes.
-"""
+"""Pilotage de l'avatar pendant que Monika parle."""
 
 from __future__ import annotations
 
@@ -19,7 +11,7 @@ import numpy as np
 from avatar import state as avatar_state
 
 # Taille des fenêtres d'analyse pour l'enveloppe d'amplitude.
-_HOP_SECONDS = 0.05  # 20 Hz : assez fluide pour l'oeil, largement gérable en pur Python
+_HOP_SECONDS = 0.05
 
 
 def _compute_envelope(audio: np.ndarray, sample_rate: int, hop_seconds: float = _HOP_SECONDS) -> np.ndarray:
@@ -36,23 +28,12 @@ def _compute_envelope(audio: np.ndarray, sample_rate: int, hop_seconds: float = 
 
     peak = float(envelope.max()) if envelope.size else 0.0
     if peak > 1e-6:
-        # On pousse un peu la courbe (racine carrée) pour que la bouche bouge
-        # visiblement même sur des passages parlés à volume modéré.
         envelope = np.sqrt(envelope / peak)
     return envelope
 
 
 def speak_with_avatar(audio: np.ndarray, sample_rate: int, play_audio: Callable[[np.ndarray, int], None], text: str = "") -> None:
-    """Joue `audio` (comme le ferait `play_audio` seul) tout en pilotant l'avatar.
-
-    - passe l'avatar en état "speaking" avant de lancer la lecture,
-    - met à jour l'amplitude au rythme de l'enveloppe calculée sur `audio`,
-    - repasse l'avatar en "idle" une fois la lecture terminée.
-
-    `play_audio` reste bloquant comme avant (voir voice/voice_audio.py) : on le
-    lance dans un thread séparé pendant que le thread appelant égrène
-    l'enveloppe, puis on rejoint les deux avant de rendre la main.
-    """
+    """Joue `audio` (comme le ferait `play_audio` seul) tout en pilotant l'avatar."""
     if audio.size == 0:
         return
 
@@ -69,8 +50,6 @@ def speak_with_avatar(audio: np.ndarray, sample_rate: int, play_audio: Callable[
     try:
         for value in envelope:
             avatar_state.set_amplitude(float(value))
-            # On se recale sur l'horloge plutôt que d'accumuler du sleep(),
-            # pour rester grossièrement synchronisé même si le calcul dérive.
             target = start + hop_seconds
             remaining = target - time.monotonic()
             if remaining > 0:

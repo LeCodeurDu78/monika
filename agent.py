@@ -1,12 +1,13 @@
 """Boucle de conversation principale de Monika."""
 
+import re
 import threading
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from avatar.server import start_avatar_server
 from config import SYSTEM_PROMPT, EXIT_WORDS
-from agents.orchestrator import process_user_message
+from agents.orchestrator import SCHEDULED_TASK_CONTEXT, process_user_message
 from agents.proactive import evaluate_and_act
 from core.native_scheduler import register_daily, unregister
 from core.settings import settings
@@ -25,9 +26,18 @@ from voice.voice_tts import speak
 _WAKE_KIND_ICONS = {"reminder": "⏰", "task": "🗓️", "briefing": "☀️"}
 
 
+_EXIT_PHRASES = tuple(word for word in EXIT_WORDS if " " in word)
+_EXIT_PHRASE_PATTERN = re.compile(
+    r"\b(?:" + "|".join(re.escape(phrase) for phrase in _EXIT_PHRASES) + r")\b"
+) if _EXIT_PHRASES else None
+
+
 def _is_exit(user_text: str) -> bool:
-    lowered = user_text.strip().lower()
-    return any(word in lowered for word in EXIT_WORDS)
+    """Vrai si l'utilisateur demande explicitement la fin de session."""
+    normalized = user_text.strip().lower().strip(" .!?…,;:")
+    if normalized in EXIT_WORDS:
+        return True
+    return bool(_EXIT_PHRASE_PATTERN and _EXIT_PHRASE_PATTERN.search(normalized))
 
 
 @dataclass
@@ -111,23 +121,11 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
     def _scheduler_tick() -> None:
         for task_id, instruction in pop_due_tasks():
             print(f"🗓️ [Tâche planifiée #{task_id}] Exécution : {instruction}")
-            task_messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        SYSTEM_PROMPT + " "
-                        "Contexte : l'échéance d'une tâche planifiée précédemment vient d'arriver. "
-                        "Aucun utilisateur n'est présent dans cette conversation pour répondre. "
-                        "Exécute l'instruction ci-dessous MAINTENANT, directement avec les outils "
-                        "nécessaires pour l'accomplir (ex: send_whatsapp_message, email_control, "
-                        "get_weather...). N'appelle PAS scheduler_control : la planification est déjà "
-                        "faite, il s'agit maintenant de l'exécuter réellement, pas de la reporter."
-                    ),
-                },
-                {"role": "user", "content": instruction},
-            ]
+            task_messages = [{"role": "user", "content": instruction}]
             try:
-                result = process_user_message(task_messages, interactive=False)
+                result = process_user_message(
+                    task_messages, interactive=False, context=SCHEDULED_TASK_CONTEXT
+                )
             except Exception as e:
                 result = f"⚠️ Échec de la tâche planifiée #{task_id} : {e}"
             channel.deliver(result, icon="🗓️")
@@ -169,6 +167,23 @@ def _sync_native_daily_triggers() -> None:
         unregister("morning_briefing")
 
 
+def _reconcile_native_triggers() -> None:
+    """Retire au démarrage les minuteries natives systemd orphelines : celles pointant vers un
+    rappel ou une tâche planifiée qui n'existe plus (ou plus active) en base, par exemple après
+    une réinitialisation manuelle de reminders.db / scheduler.db (voir core/native_scheduler.py)."""
+    from tools.utils.reminder_tools import reconcile_native_triggers as _reconcile_reminders
+    from tools.utils.scheduler_tools import reconcile_native_triggers as _reconcile_tasks
+
+    try:
+        _reconcile_reminders()
+    except Exception as e:
+        print(f"⚠️ [native_scheduler] Échec de la réconciliation des rappels natifs : {e}")
+    try:
+        _reconcile_tasks()
+    except Exception as e:
+        print(f"⚠️ [native_scheduler] Échec de la réconciliation des tâches natives : {e}")
+
+
 def _announce_pending_wake_messages(channel: Channel) -> None:
     """Annonce les résultats produits par un réveil natif survenu pendant que Monika était arrêtée."""
     for kind, message in drain_wake_outbox():
@@ -185,6 +200,7 @@ def _run_monika(channel: Channel, greeting: str) -> None:
 
     acquire_lock()
     _sync_native_daily_triggers()
+    _reconcile_native_triggers()
     ensure_curator_scheduled()
     _announce_pending_wake_messages(channel)
 

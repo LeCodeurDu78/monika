@@ -110,7 +110,7 @@ def scheduler_control(
 
                 if settings.NATIVE_SCHEDULING_ENABLED:
                     # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
-                    # l'échéance, même si le process principal n'est pas actif (voir core/wake_runner.py).
+                    # l'échéance, même si le process principal n'est pas actif (voir core/wake/wake_runner.py).
                     # Les tâches 'interval' ne sont pas relayées nativement (boucle courte, conçue
                     # pour tourner tant que Monika est active).
                     if schedule_type == "once":
@@ -193,3 +193,33 @@ def pop_due_tasks() -> list[tuple[int, str]]:
         conn.commit()
 
     return due
+
+
+def reconcile_native_triggers() -> None:
+    """Retire les minuteries natives 'task_<id>' qui ne correspondent plus à aucune tâche active
+    en base (ex: base réinitialisée ou modifiée hors de scheduler_control). À appeler une fois au
+    démarrage, avant que ces unités orphelines ne puissent se déclencher pour rien."""
+    if not settings.NATIVE_SCHEDULING_ENABLED:
+        return
+
+    from core.native_scheduler import list_registered_trigger_ids
+
+    registered_ids = {
+        tid[len("task_"):] for tid in list_registered_trigger_ids() if tid.startswith("task_")
+    }
+    if not registered_ids:
+        return
+
+    _init_db()
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        placeholders = ",".join("?" * len(registered_ids))
+        cursor.execute(
+            f"SELECT id FROM scheduled_tasks WHERE active = 1 AND id IN ({placeholders})",
+            tuple(registered_ids),
+        )
+        active_ids = {str(row[0]) for row in cursor.fetchall()}
+
+    for orphan_id in registered_ids - active_ids:
+        print(f"🧹 [native_scheduler] Minuterie orpheline retirée : task_{orphan_id}")
+        unregister(f"task_{orphan_id}")

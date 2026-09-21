@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # --- Proactivité -------------------
     PROACTIVE_ENABLED: bool = False
-    PROACTIVE_HEARTBEAT_INTERVAL_SECONDS: int = 20
+    PROACTIVE_HEARTBEAT_INTERVAL_SECONDS: int = 300
     PROACTIVE_DEDUP_COOLDOWN_MINUTES: int = 30
     PROACTIVE_SILENT_MODE: bool = False
 
@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     # --- Avatar 3D (compagnon animé) --------------------------------------------------
     AVATAR_ENABLED: bool = True
     AVATAR_HOST: str = "127.0.0.1"
-    AVATAR_PORT: int = 8734
+    AVATAR_PORT: int = 4228
     AVATAR_OPEN_BROWSER: bool = True
 
     @model_validator(mode="after")

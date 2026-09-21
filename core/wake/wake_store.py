@@ -13,9 +13,18 @@ LOCK_PATH = db_path("agent.lock")
 
 
 def acquire() -> None:
-    """Écrit le PID courant dans le fichier de verrou. À appeler au démarrage de la boucle principale."""
+    """Écrit le PID courant (et son heure de démarrage) dans le fichier de verrou.
+    À appeler au démarrage de la boucle principale."""
+    # Sur une installation neuve, <APP_DIR>/databases/ n'existe pas encore : aucune base
+    # n'a encore été ouverte à ce stade du démarrage (seul get_connection() le crée).
+    os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
+    pid = os.getpid()
+    try:
+        create_time = psutil.Process(pid).create_time()
+    except Exception:
+        create_time = 0.0
     with open(LOCK_PATH, "w") as f:
-        f.write(str(os.getpid()))
+        f.write(f"{pid}\n{create_time}")
 
 
 def release() -> None:
@@ -27,14 +36,36 @@ def release() -> None:
 
 
 def main_process_is_alive() -> bool:
-    """Indique si le PID enregistré dans le verrou correspond encore à un process actif."""
+    """Indique si le PID enregistré dans le verrou correspond encore au process qui l'a écrit.
+
+    Un simple `psutil.pid_exists(pid)` ne suffit pas : après un `kill -9` (arrêt brutal qui
+    empêche release()), l'OS peut recycler ce PID pour un tout autre process, ce qui ferait
+    croire à tort que Monika tourne encore et bloquerait le réveil natif indéfiniment. On
+    vérifie donc en plus que l'heure de démarrage du process correspond à celle enregistrée
+    au moment de l'acquisition — un PID recyclé a presque toujours une create_time différente.
+    """
     try:
         with open(LOCK_PATH) as f:
-            pid = int(f.read().strip())
-    except (FileNotFoundError, ValueError):
+            lines = f.read().strip().splitlines()
+        pid = int(lines[0])
+        stored_create_time = float(lines[1]) if len(lines) > 1 else 0.0
+    except (FileNotFoundError, ValueError, IndexError):
         return False
 
-    return psutil.pid_exists(pid)
+    if not psutil.pid_exists(pid):
+        return False
+
+    if stored_create_time <= 0.0:
+        # Verrou écrit par une version antérieure du format, ou create_time indisponible
+        # à l'écriture : on retombe sur la seule vérification d'existence.
+        return True
+
+    try:
+        actual_create_time = psutil.Process(pid).create_time()
+    except Exception:
+        return False
+
+    return abs(actual_create_time - stored_create_time) < 1.0
 
 
 # --- État quotidien (dédup briefing / tâches journalières) ---------------------------------

@@ -64,6 +64,22 @@ def run_nightly_curator() -> str:
     return report
 
 
+def get_curator_reports(days: int = 7) -> str:
+    """Relit les derniers rapports de curation nocturne stockés (les plus récents en premier)."""
+    _init_db()
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT report_date, content FROM curator_reports "
+            "WHERE created_at >= datetime('now', ?) ORDER BY created_at DESC",
+            (f"-{int(days)} days",),
+        )
+        rows = cursor.fetchall()
+    if not rows:
+        return f"Aucun rapport de curation nocturne sur les {days} derniers jours."
+    return "\n\n---\n\n".join(f"📅 {date}\n{content}" for date, content in rows)
+
+
 def _curator_already_scheduled() -> bool:
     """Évite de réinsérer une tâche planifiée en double à chaque démarrage de Monika."""
     from tools.utils.scheduler_tools import DB_PATH as SCHEDULER_DB_PATH

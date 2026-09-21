@@ -42,7 +42,7 @@ def system_control(action: str, value: int = 5, filename: str = None) -> str:
             images_dir.mkdir(parents=True, exist_ok=True)
 
             if filename:
-                clean_name = filename.strip()
+                clean_name = os.path.basename(filename.strip())
                 if not clean_name.endswith(".png"):
                     clean_name += ".png"
             else:

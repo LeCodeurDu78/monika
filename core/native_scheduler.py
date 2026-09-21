@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _wake_command() -> list[str]:
-    return [sys.executable, "-m", "core.wake_runner"]
+    return [sys.executable, "-m", "core.wake.wake_runner"]
 
 
 def register_once(trigger_id: str, run_at: datetime, kind: str, ref_id: int = 0) -> None:
@@ -34,6 +34,18 @@ def unregister(trigger_id: str) -> None:
         _systemd_unregister(trigger_id)
     except Exception as e:
         print(f"⚠️ [native_scheduler] Échec du retrait natif « {trigger_id} » : {e}")
+
+
+def list_registered_trigger_ids() -> list[str]:
+    """Renvoie les trigger_id de toutes les minuteries natives de Monika actuellement installées
+    (utilisé au démarrage pour repérer les unités orphelines : voir reconcile_native_triggers()
+    dans reminder_tools.py et scheduler_tools.py)."""
+    try:
+        d = _systemd_dir()
+    except Exception:
+        return []
+    prefix, suffix = "monika-", ".timer"
+    return [p.name[len(prefix):-len(suffix)] for p in d.glob(f"{prefix}*{suffix}")]
 
 
 # --- Linux : systemd --user (service + timer) ---------------------------------------------------
