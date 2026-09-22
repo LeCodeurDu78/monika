@@ -2,9 +2,11 @@
 
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from avatar import state as avatar_state
 from avatar.server import start_avatar_server
 from config import SYSTEM_PROMPT, EXIT_WORDS
 from agents.orchestrator import SCHEDULED_TASK_CONTEXT, process_user_message
@@ -33,7 +35,13 @@ _EXIT_PHRASE_PATTERN = re.compile(
 
 
 def _is_exit(user_text: str) -> bool:
-    """Vrai si l'utilisateur demande explicitement la fin de session."""
+    """Vrai si l'utilisateur demande explicitement la fin de session.
+
+    Un mot isolé comme « stop » doit constituer tout le message : le chercher en
+    sous-chaîne faisait quitter Monika sur « stoppe la musique ». Les formules
+    multi-mots (« au revoir », « quitte monika ») restent reconnues au fil d'une phrase,
+    mais uniquement sur des limites de mots.
+    """
     normalized = user_text.strip().lower().strip(" .!?…,;:")
     if normalized in EXIT_WORDS:
         return True
@@ -46,6 +54,11 @@ class Channel:
 
     get_input: Callable[[], Optional[str]]
     speak_replies: bool = False
+    # True pour les canaux qui n'ont pas déjà leur propre mécanisme de mise à jour de
+    # l'avatar 3D : la voix pilote déjà idle/listening/thinking/speaking au fil de
+    # l'audio réel (voir voice_audio.py et avatar/lipsync.py) et n'en a pas besoin ici ;
+    # le texte, lui, n'a rien d'autre pour faire vivre le compagnon.
+    drives_avatar: bool = False
     _speech_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def _maybe_speak(self, text: str) -> None:
@@ -57,7 +70,18 @@ class Channel:
         """Affiche (et, en mode vocal, prononce) un message de Monika."""
         prefix = f"{icon} " if icon else ""
         print(f"\n{prefix}Monika: {text}")
+        if self.drives_avatar:
+            avatar_state.set_state("speaking", text=text)
         self._maybe_speak(text)
+        if self.drives_avatar:
+            if not self.speak_replies:
+                # Sans audio pour occuper le temps, "speaking" ne durerait que le temps
+                # d'un print() — bien trop court pour que le polling front-end (100 ms,
+                # voir POLL_INTERVAL_MS dans script.js) ait la moindre chance de le voir.
+                # On le maintient un temps proportionnel à la longueur du texte, borné
+                # pour ne pas devenir pénible sur une réponse très longue.
+                time.sleep(max(0.6, min(4.0, len(text) / 18)))
+            avatar_state.set_state("idle")
 
 
 def _read_text_input() -> Optional[str]:
@@ -90,6 +114,8 @@ def _run_session(channel: Channel) -> None:
 
     try:
         while True:
+            if channel.drives_avatar:
+                avatar_state.set_state("listening")
             user_text = channel.get_input()
             if user_text is None:
                 break
@@ -99,6 +125,8 @@ def _run_session(channel: Channel) -> None:
             if had_previous_reply and looks_like_correction(user_text):
                 log_behavior_event("correction", detail=user_text)
 
+            if channel.drives_avatar:
+                avatar_state.set_state("thinking")
             messages.append({"role": "user", "content": user_text})
             bot_reply = process_user_message(messages)
             had_previous_reply = True
@@ -215,11 +243,11 @@ def _run_monika(channel: Channel, greeting: str) -> None:
 
 def run_monika() -> None:
     """Lance Monika en mode texte dans le terminal."""
-    channel = Channel(get_input=_read_text_input, speak_replies=False)
+    channel = Channel(get_input=_read_text_input, speak_replies=False, drives_avatar=True)
     _run_monika(channel, greeting="🤖 Monika Initialisée. Comment puis-je vous aider ?")
 
 
 def run_monika_voice() -> None:
     """Lance Monika en mode vocal."""
-    channel = Channel(get_input=_read_voice_input, speak_replies=True)
+    channel = Channel(get_input=_read_voice_input, speak_replies=True, drives_avatar=False)
     _run_monika(channel, greeting="Monika (mode vocal) initialisée.")
