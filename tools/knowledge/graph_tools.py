@@ -195,7 +195,9 @@ def _backfill_batch(conn: sqlite3.Connection, limit: int = GRAPH_BACKFILL_BATCH_
 
 
 def graph_backfill(limit: int = 200) -> str:
-    """Force un backfill complet (ou jusqu'à `limit` chunks) : à utiliser après une grosse indexation RAG plutôt que d'attendre que les recherches..."""
+    """Force un backfill complet (ou jusqu'à `limit` chunks) : à utiliser après une grosse
+    indexation RAG plutôt que d'attendre que les recherches (graph_search) ne le fassent au
+    fil de l'eau, par petits lots, à chaque appel."""
     _init_db()
     with get_connection(DB_PATH) as conn:
         count = _backfill_batch(conn, limit=limit)
@@ -244,7 +246,9 @@ def _entities_from_chunks(cursor: sqlite3.Cursor, chunks: list[tuple[str, int, f
 
 
 def _entities_matching_query(cursor: sqlite3.Cursor, query: str) -> dict[int, str]:
-    """Entités directement nommées dans la question (ex: 'Adam', 'Monika'), en complément de la recherche par similarité — utile pour les questions..."""
+    """Entités directement nommées dans la question (ex: 'Adam', 'Monika'), en complément de la
+    recherche par similarité — utile pour les questions qui citent une entité connue mot pour mot
+    mais que la similarité sémantique seule pourrait manquer."""
     cursor.execute("SELECT id, name FROM entities")
     matches = {}
     query_lower = query.lower()
@@ -297,7 +301,9 @@ def _traverse_graph(
 
 
 def graph_search(query: str) -> str:
-    """Interroge le graphe de connaissances de Monika (entités + relations extraites des documents indexés via rag_control) pour répondre à des questions..."""
+    """Interroge le graphe de connaissances de Monika (entités + relations extraites des documents
+    indexés via rag_control) pour répondre à des questions relationnelles précises entre des
+    entités déjà connues du graphe (ex: 'qui a recommandé quoi à qui')."""
     if not query.strip():
         return "Erreur : 'query' est requis pour interroger le graphe de connaissances."
 

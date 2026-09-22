@@ -1,10 +1,4 @@
-"""Configuration composée de Monika.
-
-Ce module ne contient QUE ce qui doit être construit/dérivé à partir de
-`core.settings` (clients LLM, prompt système, effets de bord d'init).
-Pour toute valeur de configuration brute, importer `settings` directement
-depuis `core.settings` plutôt que de passer par ici.
-"""
+"""Configuration composée de Monika."""
 
 import wikipedia
 from openai import OpenAI

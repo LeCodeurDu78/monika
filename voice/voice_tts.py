@@ -19,6 +19,7 @@ torchaudio.load = _load_with_soundfile
 
 from TTS.api import TTS
 
+from avatar.lipsync import speak_with_avatar
 from core.settings import settings
 from voice.voice_audio import play_audio
 
@@ -75,4 +76,4 @@ def speak(text: str) -> None:
 
     audio = np.asarray(wav, dtype=np.float32)
     sample_rate = tts.synthesizer.output_sample_rate
-    play_audio(audio, sample_rate)
+    speak_with_avatar(audio, sample_rate, play_audio, text=cleaned)

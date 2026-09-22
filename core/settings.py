@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     APP_DIR: Path = Field(default=Path.home() / ".monika")
 
     # --- LLM ---------------------------------------------------------------------
-    MODEL_NAME: str = "qwen3.6-35b-a3b"
+    MODEL_NAME: str = "qwen3.8-27b"
     VISION_MODEL_NAME: str = "gemini-3.5-flash"
     LLM_BASE_URL: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
@@ -70,11 +70,11 @@ class Settings(BaseSettings):
 
     # --- Analyse contextuelle de l'écran ------------------
     SCREEN_CONTEXT_OCR_ENABLED: bool = True
-    SCREEN_CONTEXT_OCR_LANG: str = "fra+eng"
+    SCREEN_CONTEXT_OCR_LANG: str = "fra"
 
     # --- Proactivité -------------------
     PROACTIVE_ENABLED: bool = False
-    PROACTIVE_HEARTBEAT_INTERVAL_SECONDS: int = 20
+    PROACTIVE_HEARTBEAT_INTERVAL_SECONDS: int = 300
     PROACTIVE_DEDUP_COOLDOWN_MINUTES: int = 30
     PROACTIVE_SILENT_MODE: bool = False
 
@@ -88,8 +88,18 @@ class Settings(BaseSettings):
     NATIVE_SCHEDULING_ENABLED: bool = True
 
     # --- Briefing du matin --------------------------
-    MORNING_BRIEFING_ENABLED: bool = True
-    MORNING_BRIEFING_TIME: str = "09:00"
+    MORNING_BRIEFING_ENABLED: bool = False
+    MORNING_BRIEFING_TIME: str = "07:30"
+
+    # --- Curator nocturne ------
+    CURATOR_ENABLED: bool = True
+    CURATOR_TIME: str = "03:30"
+
+    # --- Avatar 3D (compagnon animé) --------------------------------------------------
+    AVATAR_ENABLED: bool = True
+    AVATAR_HOST: str = "127.0.0.1"
+    AVATAR_PORT: int = 4228
+    AVATAR_OPEN_BROWSER: bool = True
 
     @model_validator(mode="after")
     def _resolve_dependent_defaults(self) -> "Settings":

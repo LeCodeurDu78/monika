@@ -61,7 +61,7 @@ def reminder_control(
 
                 if settings.NATIVE_SCHEDULING_ENABLED:
                     # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
-                    # l'échéance, même si le process principal n'est pas actif (voir wake_runner.py).
+                    # l'échéance, même si le process principal n'est pas actif (voir core/wake/wake_runner.py).
                     register_once(f"reminder_{new_id}", parsed, kind="reminder", ref_id=new_id)
 
                 return (
@@ -121,3 +121,33 @@ def reminder_control(
 
     except Exception as e:
         return f"Erreur lors de la gestion des rappels : {str(e)}"
+
+
+def reconcile_native_triggers() -> None:
+    """Retire les minuteries natives 'reminder_<id>' qui ne correspondent plus à aucun rappel
+    actif en base (ex: base réinitialisée ou modifiée hors de reminder_control). À appeler une
+    fois au démarrage, avant que ces unités orphelines ne puissent se déclencher pour rien."""
+    if not settings.NATIVE_SCHEDULING_ENABLED:
+        return
+
+    from core.native_scheduler import list_registered_trigger_ids
+
+    registered_ids = {
+        tid[len("reminder_"):] for tid in list_registered_trigger_ids() if tid.startswith("reminder_")
+    }
+    if not registered_ids:
+        return
+
+    _init_db()
+    with get_connection(DB_PATH) as conn:
+        cursor = conn.cursor()
+        placeholders = ",".join("?" * len(registered_ids))
+        cursor.execute(
+            f"SELECT id FROM reminders WHERE notified = 0 AND id IN ({placeholders})",
+            tuple(registered_ids),
+        )
+        active_ids = {str(row[0]) for row in cursor.fetchall()}
+
+    for orphan_id in registered_ids - active_ids:
+        print(f"🧹 [native_scheduler] Minuterie orpheline retirée : reminder_{orphan_id}")
+        unregister(f"reminder_{orphan_id}")

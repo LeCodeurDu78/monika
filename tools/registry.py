@@ -1,16 +1,4 @@
-"""Registre unique des outils de Monika : chaque outil est décrit une seule fois.
-
-Avant : `AVAILABLE_TOOLS` (dict nom -> fonction) et `TOOLS_SCHEMA` (liste de
-schémas JSON) étaient deux structures maintenues à la main, séparément, avec
-le nom de l'outil répété comme chaîne dans chacune — rien n'empêchait qu'un
-outil existe dans l'une sans exister dans l'autre, ou que les deux noms
-divergent par une faute de frappe.
-
-Ici, chaque outil n'est déclaré qu'une seule fois dans `TOOL_DEFS`, sous
-forme d'un `ToolDef` qui associe la fonction Python à la description destinée
-au modèle. `AVAILABLE_TOOLS` et `TOOLS_SCHEMA` en sont simplement dérivés ;
-le nom de l'outil est toujours lu depuis `func.__name__`, jamais retapé.
-"""
+"""Registre unique des outils de Monika."""
 
 import importlib
 import inspect
@@ -27,22 +15,24 @@ from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
-from tools.knowledge.memory_tools import memory_control
+from tools.knowledge.memory_tools import memory_control, export_memory_markdown
 from tools.knowledge.rag_tools import rag_control
 from tools.knowledge.graph_tools import graph_search, graph_backfill
 from tools.vision.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool, patch_existing_file
 from tools.system.browser_tools import browser_control
-from tools.utils.joke_tools import get_joke
+from tools.system.reservation_tools import reservation_control
 from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.reminder_tools import reminder_control
 from tools.utils.scheduler_tools import scheduler_control
 from tools.utils.topic_tools import topic_watch_control
+from tools.utils.briefing_tools import run_morning_briefing
 from tools.system.screen_context_tools import get_screen_context
 from tools.system.behavior_tools import behavior_control
-from agents.proactive import proactive_control
+from tools.system.curator import run_nightly_curator, get_curator_reports
+from agents.proactive import proactive_control, list_initiatives
 
 
 @dataclass
@@ -94,7 +84,8 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         manage_files,
-        "Liste, crée des dossiers ou déplace des fichiers sur l'ordinateur.",
+        "Liste, crée des dossiers ou déplace des fichiers sur l'ordinateur. Pour copier, supprimer, "
+        "renommer ou modifier le contenu d'un fichier, utilise run_script.",
         {
             "action": {
                 "type": "string",
@@ -111,7 +102,12 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         system_control,
-        "Contrôle les fonctionnalités du système Linux (volume, média, capture d'écran).",
+        "Contrôle les fonctionnalités du système Linux : volume GLOBAL de l'OS (volume_up/volume_down, "
+        "via pamixer — affecte tout le son de la machine, pas seulement Spotify), capture d'écran brute "
+        "sans analyse (screenshot — si l'utilisateur veut que Monika LISE l'écran, préfère get_screen_context "
+        "ou analyze_image), et media_toggle (touche lecture/pause générique envoyée à l'application média "
+        "ayant le focus, quelle qu'elle soit). Pour du volume ou une lecture/pause spécifiquement Spotify, "
+        "préfère spotify_control qui cible cette application précisément.",
         {
             "action": {
                 "type": "string",
@@ -121,6 +117,14 @@ TOOL_DEFS: list[ToolDef] = [
             "value": {
                 "type": "integer",
                 "description": "Pourcentage de variation du volume. Utilisé uniquement pour volume_up/volume_down.",
+            },
+            "filename": {
+                "type": "string",
+                "description": (
+                    "Nom de fichier pour la capture d'écran (utilisé uniquement pour "
+                    "action='screenshot'). L'extension .png est ajoutée si absente. "
+                    "Si omis, un nom horodaté est généré automatiquement."
+                ),
             },
         },
         ["action"],
@@ -146,7 +150,13 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         web_search,
-        "Effectue des recherches en ligne sur Wikipédia ou sur le Web pour trouver des informations récentes ou de la culture générale.",
+        "Effectue des recherches en ligne sur Wikipédia ou sur le Web, pour de l'information EXTERNE et "
+        "publique (actualité, culture générale, prix, comparatifs). Pour ce que Monika sait déjà sur "
+        "l'utilisateur ou ses documents personnels, préfère memory_control ou rag_control : ne cherche pas "
+        "sur le web une information que l'utilisateur a pu lui confier directement. Le paramètre 'mode' "
+        "adapte la requête et la source privilégiée selon l'intention (actualités récentes, recherche "
+        "approfondie, prix, comparatif, ou recherche générale) et ne s'applique que pour "
+        "source='duckduckgo'.",
         {
             "source": {
                 "type": "string",
@@ -154,6 +164,15 @@ TOOL_DEFS: list[ToolDef] = [
                 "description": "'wikipedia' pour de la culture générale ou des définitions, 'duckduckgo' pour de l'actualité ou des recherches Web générales.",
             },
             "query": {"type": "string", "description": "Les termes de la recherche."},
+            "mode": {
+                "type": "string",
+                "enum": ["search", "news", "research", "price", "compare"],
+                "description": "Ne s'applique que pour source='duckduckgo'. 'search' (défaut) : recherche web générale. "
+                "'news' : actualités récentes via un flux RSS d'actualités. 'research' : recherche "
+                "approfondie combinant un résumé encyclopédique et davantage de résultats web. "
+                "'price' : oriente la recherche vers des sites marchands pour trouver un prix. "
+                "'compare' : oriente la recherche vers des sites de tests/comparatifs.",
+            },
         },
         ["source", "query"],
     ),
@@ -163,16 +182,19 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         calendar_control,
-        "Consulte la liste des événements ou ajoute un rendez-vous dans Google Calendar.",
+        "Consulte la liste des événements ou ajoute un rendez-vous dans Google Calendar. À réserver aux "
+        "événements structurés avec un horaire de début/fin et éventuellement un lieu (rendez-vous, "
+        "réunion, cours). Pour un simple rappel ponctuel sans notion de durée (\"rappelle-moi de...\"), "
+        "préfère reminder_control, plus léger et annoncé automatiquement par Monika à l'échéance.",
         {
             "action": {
                 "type": "string",
-                "enum": ["list", "add"],
-                "description": "'list' pour voir les prochains événements, 'add' pour en créer un nouveau.",
+                "enum": ["list", "add", "delete"],
+                "description": "'list' pour voir les prochains événements, 'add' pour en créer un nouveau, 'delete' pour en supprimer un existant en le retrouvant par son titre exact (requiert 'summary' ; pour un événement récurrent, supprime toute la série).",
             },
             "summary": {
                 "type": "string",
-                "description": "Titre du rendez-vous/événement (requis pour action='add').",
+                "description": "Titre du rendez-vous/événement. Requis pour action='add' (le titre à créer) et action='delete' (le titre exact de l'événement à retrouver et supprimer).",
             },
             "start_time": {
                 "type": "string",
@@ -181,6 +203,14 @@ TOOL_DEFS: list[ToolDef] = [
             "end_time": {
                 "type": "string",
                 "description": "Date et heure de fin au format ISO (ex: 2026-08-12T15:00:00).",
+            },
+            "location": {
+                "type": "string",
+                "description": "Lieu/salle de l'événement (ex: Salle 102). Optionnel.",
+            },
+            "repeat_weekly": {
+                "type": "boolean",
+                "description": "Si True, l'événement se répète chaque semaine le même jour que 'start_time' (ex: pour un cours récurrent). Par défaut False. Utilisé uniquement pour action='add'.",
             },
             "limit": {"type": "integer", "description": "Nombre d'événements à afficher (par défaut 5)."},
         },
@@ -203,7 +233,12 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         run_script,
-        "Exécute une commande ou un script Bash dans le terminal local.",
+        "Exécute une commande ou un script Bash dans le terminal local. Outil de dernier recours pour "
+        "tout ce qu'aucun autre outil dédié ne couvre : n'utilise PAS run_script pour lancer une "
+        "application (open_application), gérer des fichiers/dossiers courants (manage_files), contrôler "
+        "le volume/une capture d'écran (system_control), ou créer un projet complet (create_full_project) "
+        "— ces outils dédiés sont plus sûrs et plus lisibles pour l'utilisateur que la commande shell "
+        "équivalente.",
         {
             "command": {
                 "type": "string",
@@ -218,7 +253,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         memory_control,
-        "Stocke ou recherche des informations importantes à long terme (préférences de l'utilisateur, chemins de projets, règles de code, faits personnels). La recherche ('search') est sémantique : elle retrouve les souvenirs par sens, pas seulement par mot-clé exact.",
+        "Stocke ou recherche des informations importantes à long terme (préférences de l'utilisateur, chemins de projets, règles de code, faits personnels explicitement énoncés). La recherche ('search') est sémantique : elle retrouve les souvenirs par sens, pas seulement par mot-clé exact. Réservé aux faits courts que Monika doit retenir elle-même ; pour interroger le contenu de documents entiers (PDF, notes...), utilise rag_control, et pour une relation précise entre entités déjà extraites de ces documents, graph_search.",
         {
             "action": {
                 "type": "string",
@@ -251,7 +286,7 @@ TOOL_DEFS: list[ToolDef] = [
             },
             "path": {
                 "type": "string",
-                "description": "Chemin du fichier ou dossier à indexer (requis pour action='ingest'). Formats acceptés : .txt, .md, .csv, .json, .py, .pdf, .docx.",
+                "description": "Chemin du fichier ou dossier à indexer (requis pour action='ingest'). Formats acceptés : .txt, .md, .csv, .json, .py, .log, .pdf, .docx.",
             },
             "query": {
                 "type": "string",
@@ -287,7 +322,11 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         analyze_image,
-        "Analyse visuellement une image locale ou une capture d'écran (extraire du texte, lire des erreurs, décrire un schéma, identifier des éléments à l'écran).",
+        "Analyse visuellement un FICHIER image déjà présent sur le disque (photo, capture d'écran "
+        "déjà enregistrée, schéma envoyé par l'utilisateur...) : extraire du texte, lire des erreurs, "
+        "décrire une image. Pour comprendre ce qui est affiché à l'écran EN CE MOMENT, préfère "
+        "get_screen_context (plus rapide, déjà structuré) ; n'utilise system_control(screenshot) puis "
+        "analyze_image que si l'utilisateur veut explicitement conserver la capture comme fichier.",
         {
             "image_path": {
                 "type": "string",
@@ -343,16 +382,20 @@ TOOL_DEFS: list[ToolDef] = [
         "Contrôle un navigateur Firefox géré par Monika elle-même (lancé automatiquement au premier "
         "besoin, avec un profil persistant dédié — aucun navigateur déjà ouvert requis côté utilisateur) : "
         "lister/changer d'onglet, naviguer, lire le contenu visible d'une page, lister les éléments "
-        "interactifs (champs/boutons/liens) avec leur vrai nom accessible, cliquer sur un élément ou "
-        "remplir un champ identifié par sa description (texte visible, rôle, label, placeholder — jamais "
-        "par coordonnées x/y), ou fermer le navigateur. IMPORTANT : avant de cliquer ou remplir un champ "
+        "interactifs (champs/boutons/liens) avec leur vrai nom accessible, cliquer sur un élément, "
+        "remplir un champ, lire la valeur actuelle d'un champ, choisir une option dans une liste "
+        "déroulante, envoyer une touche clavier (utile pour les sélecteurs de date/autocomplétion), "
+        "attendre qu'un élément ou un texte apparaisse (contenu chargé en AJAX, ex: créneaux "
+        "disponibles), ou fermer le navigateur. IMPORTANT : avant de cliquer ou remplir un champ "
         "sur une page inconnue, utilise d'abord 'list_interactive_elements' pour connaître les libellés "
         "exacts des éléments plutôt que de deviner une description au hasard — cela évite des tentatives "
         "ratées et économise des tours d'action. 'navigate' et 'click_element' renvoient déjà un aperçu "
         "compact de la page résultante : ne rappelle PAS 'read_page_content' juste après pour vérifier "
         "qu'une action a marché, l'aperçu suffit dans la grande majorité des cas. Pour 'read_page_content', "
         "utilise full=False (aperçu court, par défaut) sauf besoin réel d'extraire un contenu détaillé "
-        "(liste de résultats, article, formulaire complexe), auquel cas passe full=True.",
+        "(liste de résultats, article, formulaire complexe), auquel cas passe full=True. Pour mener une "
+        "réservation web jusqu'au bout (restaurant, rendez-vous...), voir le déroulé détaillé fourni en "
+        "consigne système, et utilise 'reservation_control' pour l'archiver une fois confirmée.",
         {
             "action": {
                 "type": "string",
@@ -364,6 +407,10 @@ TOOL_DEFS: list[ToolDef] = [
                     "list_interactive_elements",
                     "click_element",
                     "fill_field",
+                    "get_field_value",
+                    "select_option",
+                    "press_key",
+                    "wait_for",
                     "close_browser",
                 ],
                 "description": "L'action à effectuer sur le navigateur.",
@@ -379,11 +426,13 @@ TOOL_DEFS: list[ToolDef] = [
             "description": {
                 "type": "string",
                 "description": "Description de l'élément ciblé : texte visible, libellé du bouton/lien, label du champ, etc. "
-                "(requis pour action='click_element' et action='fill_field').",
+                "(requis pour action='click_element', 'fill_field', 'get_field_value' et 'select_option' ; "
+                "optionnel pour 'press_key' et 'wait_for').",
             },
             "text": {
                 "type": "string",
-                "description": "Texte à saisir dans le champ ciblé (requis pour action='fill_field').",
+                "description": "Texte à saisir dans le champ ciblé (requis pour action='fill_field'), ou texte à attendre "
+                "sur la page (optionnel pour action='wait_for', alternative à 'description').",
             },
             "full": {
                 "type": "boolean",
@@ -391,26 +440,110 @@ TOOL_DEFS: list[ToolDef] = [
                 "(quelques centaines de caractères), true = contenu complet de la page (coûteux en contexte, "
                 "à réserver à l'extraction d'un contenu détaillé).",
             },
+            "option": {
+                "type": "string",
+                "description": "Libellé (ou valeur) de l'option à choisir (requis pour action='select_option').",
+            },
+            "key": {
+                "type": "string",
+                "description": "Touche clavier à envoyer, ex: 'Enter', 'Escape', 'Tab', 'ArrowDown' "
+                "(requis pour action='press_key').",
+            },
+            "timeout_ms": {
+                "type": "integer",
+                "description": "Délai d'attente en millisecondes pour action='wait_for' (défaut 10000).",
+            },
         },
         ["action"],
     ),
     ToolDef(
-        get_joke,
-        "Raconte une blague amusante pour développeurs ou geeks.",
+        reservation_control,
+        "Archive localement une réservation web réelle (restaurant, rendez-vous...) une fois qu'elle a "
+        "été effectivement confirmée sur le site via 'browser_control', et propose de l'ajouter au "
+        "calendrier et/ou de créer un rappel avant l'échéance. À utiliser en fin de scénario de "
+        "réservation, jamais avant la confirmation réelle côté site (ne pas enregistrer une réservation "
+        "qui n'a pas été validée). N'annule et ne modifie rien côté prestataire : action='cancel' ne fait "
+        "que marquer l'enregistrement local comme annulé — une vraie annulation doit être faite via "
+        "'browser_control' ou en contactant le prestataire.",
         {
-            "language": {
+            "action": {
                 "type": "string",
-                "description": "Langue de la blague ('fr', 'en', 'es', 'de'). Par défaut 'fr'.",
+                "enum": ["save", "list", "get", "cancel", "delete"],
+                "description": "L'action à effectuer.",
             },
-            "category": {
+            "title": {
                 "type": "string",
-                "description": "Catégorie de blague ('neutral', 'chuck', 'all'). Par défaut 'neutral'.",
+                "description": "Titre court de la réservation, ex: 'Table pour 2 chez Le Petit Zinc' "
+                "(requis pour action='save').",
+            },
+            "provider": {
+                "type": "string",
+                "description": "Nom du restaurant, praticien ou prestataire.",
+            },
+            "scheduled_at": {
+                "type": "string",
+                "description": "Date/heure ISO de la réservation, ex: '2026-09-12T20:00:00'.",
+            },
+            "party_size": {
+                "type": "integer",
+                "description": "Nombre de personnes (réservation restaurant), si applicable.",
+            },
+            "contact_name": {
+                "type": "string",
+                "description": "Nom utilisé pour la réservation.",
+            },
+            "contact_phone": {
+                "type": "string",
+                "description": "Téléphone utilisé pour la réservation.",
+            },
+            "contact_email": {
+                "type": "string",
+                "description": "E-mail utilisé pour la réservation.",
+            },
+            "confirmation_reference": {
+                "type": "string",
+                "description": "Numéro/texte de confirmation affiché par le site après validation, si disponible.",
+            },
+            "source_url": {
+                "type": "string",
+                "description": "URL de la page de confirmation ou du site de réservation.",
+            },
+            "notes": {
+                "type": "string",
+                "description": "Toute information complémentaire utile (motif du rendez-vous, demandes particulières...).",
+            },
+            "duration_minutes": {
+                "type": "integer",
+                "description": "Durée estimée de l'événement en minutes pour l'ajout au calendrier (défaut 120).",
+            },
+            "add_to_calendar": {
+                "type": "boolean",
+                "description": "Si true, ajoute automatiquement un événement Google Calendar (requiert 'scheduled_at').",
+            },
+            "add_reminder": {
+                "type": "boolean",
+                "description": "Si true, crée un rappel avant l'échéance (requiert 'scheduled_at').",
+            },
+            "reminder_minutes_before": {
+                "type": "integer",
+                "description": "Nombre de minutes avant 'scheduled_at' pour déclencher le rappel (défaut 120).",
+            },
+            "reservation_id": {
+                "type": "integer",
+                "description": "Identifiant de la réservation (requis pour 'get', 'cancel' et 'delete').",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Nombre maximum de réservations à lister pour action='list' (défaut 10).",
             },
         },
+        ["action"],
     ),
     ToolDef(
         spotify_control,
-        "Permet de contrôler Spotify : lire de la musique, mettre en pause, passer un morceau, changer le volume ou chercher des playlists.",
+        "Permet de contrôler Spotify spécifiquement : lire de la musique, mettre en pause, passer un "
+        "morceau, changer le VOLUME DE L'APPLICATION SPOTIFY (indépendant du volume global de l'OS, "
+        "voir system_control pour ce dernier) ou chercher des morceaux/playlists.",
         {
             "action": {
                 "type": "string",
@@ -419,7 +552,12 @@ TOOL_DEFS: list[ToolDef] = [
             },
             "query": {
                 "type": "string",
-                "description": "Le nom du morceau, de l'artiste ou de la playlist (pour action='play').",
+                "description": (
+                    "Nom du morceau, artiste ou playlist à chercher (pour action='play'). "
+                    "Ouvre Spotify sur les résultats de recherche — sans clé API Spotify "
+                    "configurée, Monika ne peut pas lancer directement une piste précise ; "
+                    "l'utilisateur devra choisir dans les résultats."
+                ),
             },
             "volume": {
                 "type": "integer",
@@ -459,7 +597,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         reminder_control,
-        "Crée, liste ou supprime des rappels avec échéance (ex: \"rappelle-moi de renouveler mon passeport avant le 20 mars\"). Un rappel arrivé à échéance est annoncé automatiquement par Monika, sans que l'utilisateur ait à demander.",
+        "Crée, liste ou supprime des rappels avec échéance (ex: \"rappelle-moi de renouveler mon passeport avant le 20 mars\"). Un rappel arrivé à échéance est annoncé automatiquement par Monika, sans que l'utilisateur ait à demander. Pour un vrai rendez-vous avec horaire de fin/lieu à faire apparaître dans l'agenda, préfère calendar_control ; pour que Monika exécute réellement une action à l'échéance plutôt que de simplement l'annoncer, préfère scheduler_control.",
         {
             "action": {
                 "type": "string",
@@ -576,6 +714,58 @@ TOOL_DEFS: list[ToolDef] = [
             },
         },
         ["action"],
+    ),
+    ToolDef(
+        export_memory_markdown,
+        "Régénère le miroir Markdown en lecture seule de la mémoire long terme de Monika (un "
+        "fichier par catégorie, ex: preferences.md, projets.md), pour inspection humaine directe "
+        "sans passer par memory_control. Normalement régénéré automatiquement chaque nuit par le "
+        "curator ; à utiliser seulement si l'utilisateur demande explicitement une régénération "
+        "immédiate.",
+    ),
+    ToolDef(
+        list_initiatives,
+        "Liste les initiatives autonomes récentes de Monika (décisions prises de sa propre "
+        "initiative, exécutées, filtrées, silencieuses ou échouées) — utile pour répondre à « qu'as-tu "
+        "fait/prévu aujourd'hui ? ».",
+        {
+            "days": {
+                "type": "integer",
+                "description": "Nombre de jours à couvrir (par défaut 1, aujourd'hui uniquement).",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["exécutée", "filtrée", "silencieuse", "échouée"],
+                "description": "Filtre optionnel par statut. Laisser vide pour tout afficher.",
+            },
+        },
+    ),
+    ToolDef(
+        run_morning_briefing,
+        "Compose et livre immédiatement le briefing du matin (résumé de la veille, météo, "
+        "actualités, nouveautés sur les sujets surveillés via topic_watch_control). Normalement "
+        "déclenché automatiquement une fois par jour si activé en configuration ; à utiliser "
+        "seulement si l'utilisateur demande explicitement son briefing maintenant (ex: "
+        "\"fais-moi le point du matin\", \"quoi de neuf sur mes sujets surveillés ?\").",
+    ),
+    ToolDef(
+        run_nightly_curator,
+        "Génère immédiatement le rapport de curation nocturne de Monika (comportement récent, "
+        "initiatives autonomes du jour, faits contredits/à revoir de la mémoire tracée). "
+        "Normalement déclenché automatiquement une fois par nuit ; à utiliser seulement si "
+        "l'utilisateur demande explicitement une curation immédiate.",
+    ),
+    ToolDef(
+        get_curator_reports,
+        "Relit les rapports de curation nocturne déjà générés (comportement, initiatives, faits "
+        "à revoir), sans en générer un nouveau. Utile pour « qu'as-tu observé cette nuit ? » ou "
+        "« montre-moi le dernier rapport de curation ».",
+        {
+            "days": {
+                "type": "integer",
+                "description": "Nombre de jours à couvrir (par défaut 7).",
+            },
+        },
     ),
 ]
 

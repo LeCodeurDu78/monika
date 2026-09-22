@@ -5,7 +5,6 @@ quotidien, déclenché au premier lancement de la journée."""
 
 from datetime import datetime
 
-from config import SYSTEM_PROMPT
 from tools.utils.topic_tools import check_watched_topics
 
 
@@ -29,10 +28,7 @@ def run_morning_briefing() -> str:
     nouveautés détectées sur les sujets surveillés, dans un seul message."""
     from agents.orchestrator import process_user_message
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": _build_instruction()},
-    ]
+    messages = [{"role": "user", "content": _build_instruction()}]
     try:
         briefing = process_user_message(messages, interactive=False)
     except Exception as e:

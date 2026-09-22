@@ -10,7 +10,7 @@ from core.settings import settings
 
 def db_path(filename: str) -> str:
     """Chemin d'une base SQLite."""
-    return str(settings.APP_DIR / filename)
+    return str(settings.APP_DIR / "databases" / filename)
 
 
 def get_connection(path: Union[str, Path]) -> sqlite3.Connection:
@@ -24,3 +24,12 @@ def init_table(path: Union[str, Path], create_sql: str) -> None:
     with get_connection(path) as conn:
         conn.executescript(create_sql)
         conn.commit()
+
+
+def ensure_schema(path: Union[str, Path], create_sql: str):
+    """Fabrique un `_init_db()` idempotent pour un module donné (path + script de création fixés)."""
+
+    def _init_db() -> None:
+        init_table(path, create_sql)
+
+    return _init_db

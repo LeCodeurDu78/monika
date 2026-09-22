@@ -36,8 +36,18 @@ def _get_calendar_service():
     return build('calendar', 'v3', credentials=creds)
 
 
+# Jour de la semaine Python (Monday=0) -> code BYDAY iCalendar
+_WEEKDAY_TO_BYDAY = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+
+
 def calendar_control(
-    action: str, summary: str = None, start_time: str = None, end_time: str = None, limit: int = 5
+    action: str,
+    summary: str = None,
+    start_time: str = None,
+    end_time: str = None,
+    limit: int = 5,
+    location: str = None,
+    repeat_weekly: bool = False,
 ) -> str:
     """Gère la consultation et l'ajout d'événements dans Google Calendar."""
     try:
@@ -65,7 +75,10 @@ def calendar_control(
             for event in events:
                 start = event['start'].get('dateTime', event['start'].get('date'))
                 summary_text = event.get('summary', 'Sans titre')
-                formatted.append(f"• {start} : {summary_text}")
+                location_text = event.get('location')
+                loc_suffix = f" ({location_text})" if location_text else ""
+                recurring = " [récurrent]" if event.get('recurringEventId') else ""
+                formatted.append(f"• {start} : {summary_text}{loc_suffix}{recurring}")
 
             return "Prochains événements Google Calendar :\n" + "\n".join(formatted)
 
@@ -79,8 +92,57 @@ def calendar_control(
                 'end': {'dateTime': end_time, 'timeZone': 'Europe/Paris'},
             }
 
+            if location:
+                event['location'] = location
+
+            if repeat_weekly:
+                try:
+                    start_dt = datetime.datetime.fromisoformat(start_time)
+                except ValueError:
+                    return f"Erreur : 'start_time' ('{start_time}') n'est pas une date/heure ISO valide."
+                byday = _WEEKDAY_TO_BYDAY[start_dt.weekday()]
+                event['recurrence'] = [f'RRULE:FREQ=WEEKLY;BYDAY={byday}']
+
             created_event = service.events().insert(calendarId='primary', body=event).execute()
-            return f"Événement '{summary}' créé avec succès (Lien : {created_event.get('htmlLink')})."
+            repeat_txt = " (récurrent chaque semaine)" if repeat_weekly else ""
+            return f"Événement '{summary}'{repeat_txt} créé avec succès (Lien : {created_event.get('htmlLink')})."
+
+        elif action == "delete":
+            if not summary:
+                return "Erreur : 'summary' est requis pour supprimer un événement (voir action='list')."
+
+            now = datetime.datetime.utcnow().isoformat() + 'Z'
+            events_result = (
+                service.events()
+                .list(
+                    calendarId='primary',
+                    timeMin=now,
+                    q=summary,
+                    maxResults=25,
+                    singleEvents=True,
+                    orderBy='startTime',
+                )
+                .execute()
+            )
+            matches = [
+                e for e in events_result.get('items', [])
+                if e.get('summary', '').strip().lower() == summary.strip().lower()
+            ]
+
+            if not matches:
+                return f"Aucun événement à venir nommé « {summary} » trouvé."
+
+            target = matches[0]
+            is_recurring = bool(target.get('recurringEventId'))
+            # Pour une occurrence d'un événement récurrent, il faut supprimer l'événement
+            # maître (recurringEventId) pour effacer toute la série, pas juste cette occurrence.
+            event_id_to_delete = target.get('recurringEventId', target['id'])
+
+            service.events().delete(calendarId='primary', eventId=event_id_to_delete).execute()
+
+            if is_recurring:
+                return f"🗑️ Événement récurrent « {summary} » supprimé (toutes les occurrences)."
+            return f"🗑️ Événement « {summary} » supprimé."
 
         return "Action non reconnue."
     except Exception as e:

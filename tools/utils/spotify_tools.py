@@ -1,6 +1,7 @@
 """Contrôle Spotify robuste via playerctl"""
 
 import subprocess
+from urllib.parse import quote
 
 
 def _run_playerctl(args: list) -> tuple[bool, str]:
@@ -23,6 +24,20 @@ def spotify_control(action: str, query: str = "", volume: int = 50) -> str:
         return "❌ Impossible de mettre en pause : vérifiez que Spotify est ouvert sur votre PC."
 
     elif action == "play":
+        if query.strip():
+            # Aucune clé API Spotify n'est configurée dans ce projet : on ne peut donc pas
+            # résoudre `query` en piste précise via l'API Web Spotify. On passe en revanche
+            # par le schéma d'URI spotify:search:<requête>, envoyé au client local via
+            # OpenUri (MPRIS) : Spotify s'ouvre directement sur les résultats de recherche.
+            ok_open, _ = _run_playerctl(["open", f"spotify:search:{quote(query.strip())}"])
+            if ok_open:
+                return (
+                    f"🔎 Spotify ouvert sur les résultats pour « {query.strip()} ». "
+                    "Je ne peux pas lancer une piste précise sans API Spotify configurée : "
+                    "dites-moi lequel des résultats lancer, ou donnez-moi directement un lien Spotify."
+                )
+            return "❌ Impossible d'ouvrir la recherche Spotify : vérifiez que Spotify est ouvert sur votre PC."
+
         success, _ = _run_playerctl(["play"])
         if success:
             return "▶️ Lecture Spotify lancée."
