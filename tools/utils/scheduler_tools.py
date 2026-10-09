@@ -3,8 +3,6 @@
 from datetime import datetime, timedelta
 
 from core.db import db_path, get_connection, init_table
-from core.native_scheduler import register_daily, register_once, unregister
-from core.settings import settings
 
 DB_PATH = db_path("scheduler.db")
 
@@ -108,16 +106,6 @@ def scheduler_control(
                 conn.commit()
                 new_id = cursor.lastrowid
 
-                if settings.NATIVE_SCHEDULING_ENABLED:
-                    # Filet de sécurité : réveille Monika via le planificateur natif de l'OS à
-                    # l'échéance, même si le process principal n'est pas actif (voir core/wake/wake_runner.py).
-                    # Les tâches 'interval' ne sont pas relayées nativement (boucle courte, conçue
-                    # pour tourner tant que Monika est active).
-                    if schedule_type == "once":
-                        register_once(f"task_{new_id}", next_run, kind="task", ref_id=new_id)
-                    elif schedule_type == "daily":
-                        register_daily(f"task_{new_id}", time_of_day.strip(), kind="task", ref_id=new_id)
-
                 return (
                     f"🗓️ Tâche planifiée (#{new_id}, {SCHEDULE_LABELS[schedule_type]}) : "
                     f"« {instruction.strip()} » — prochain déclenchement le {next_run.strftime('%d/%m/%Y à %H:%M')}."
@@ -144,9 +132,6 @@ def scheduler_control(
                 conn.commit()
                 if cursor.rowcount == 0:
                     return f"Aucune tâche planifiée trouvée avec l'identifiant #{task_id}."
-
-                if settings.NATIVE_SCHEDULING_ENABLED:
-                    unregister(f"task_{task_id}")
 
                 return f"🛑 Tâche planifiée #{task_id} annulée."
 
@@ -175,9 +160,6 @@ def pop_due_tasks() -> list[tuple[int, str]]:
 
             if schedule_type == "once":
                 cursor.execute("UPDATE scheduled_tasks SET active = 0 WHERE id = ?", (task_id,))
-                if settings.NATIVE_SCHEDULING_ENABLED:
-                    # La tâche est consommée : on retire le déclenchement natif ponctuel associé.
-                    unregister(f"task_{task_id}")
             elif schedule_type == "daily":
                 new_next = _next_daily_run(time_of_day, after=datetime.now())
                 cursor.execute(
@@ -193,33 +175,3 @@ def pop_due_tasks() -> list[tuple[int, str]]:
         conn.commit()
 
     return due
-
-
-def reconcile_native_triggers() -> None:
-    """Retire les minuteries natives 'task_<id>' qui ne correspondent plus à aucune tâche active
-    en base (ex: base réinitialisée ou modifiée hors de scheduler_control). À appeler une fois au
-    démarrage, avant que ces unités orphelines ne puissent se déclencher pour rien."""
-    if not settings.NATIVE_SCHEDULING_ENABLED:
-        return
-
-    from core.native_scheduler import list_registered_trigger_ids
-
-    registered_ids = {
-        tid[len("task_"):] for tid in list_registered_trigger_ids() if tid.startswith("task_")
-    }
-    if not registered_ids:
-        return
-
-    _init_db()
-    with get_connection(DB_PATH) as conn:
-        cursor = conn.cursor()
-        placeholders = ",".join("?" * len(registered_ids))
-        cursor.execute(
-            f"SELECT id FROM scheduled_tasks WHERE active = 1 AND id IN ({placeholders})",
-            tuple(registered_ids),
-        )
-        active_ids = {str(row[0]) for row in cursor.fetchall()}
-
-    for orphan_id in registered_ids - active_ids:
-        print(f"🧹 [native_scheduler] Minuterie orpheline retirée : task_{orphan_id}")
-        unregister(f"task_{orphan_id}")

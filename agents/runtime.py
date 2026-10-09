@@ -3,7 +3,6 @@
 import json
 
 from config import client, MODEL_NAME
-from tools.system.behavior_tools import log_behavior_event
 
 MAX_CONTEXT_MESSAGES = 50
 TOOL_RESULT_MAX_CHARS = 15000
@@ -78,7 +77,6 @@ def execute_tool_call(tool_call, available_tools: dict, interactive: bool = True
         return f"⚠️ L'outil '{func_name}' n'est pas disponible."
 
     print(f"⚙️ [Action] : Exécution de {func_name}({func_args})...")
-    log_behavior_event("tool_call", tool_name=func_name)
     tool_function = available_tools[func_name]
     return str(tool_function(**func_args))
 

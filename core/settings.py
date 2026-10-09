@@ -60,40 +60,10 @@ class Settings(BaseSettings):
     VOICE_MAX_RECORD_SECONDS: float = 20
 
     # --- Tâches de fond --------------------------------------------------------------
-    REMINDER_CHECK_INTERVAL_SECONDS: int = 60
     SCHEDULER_CHECK_INTERVAL_SECONDS: int = 30
-
-    # --- Analyse visuelle passive (screen watcher) ------------------------------------
-    SCREEN_WATCH_ENABLED: bool = False
-    SCREEN_WATCH_INTERVAL_SECONDS: int = 120
-    SCREEN_WATCH_HASH_THRESHOLD: int = 5
-
-    # --- Analyse contextuelle de l'écran ------------------
-    SCREEN_CONTEXT_OCR_ENABLED: bool = True
-    SCREEN_CONTEXT_OCR_LANG: str = "fra"
-
-    # --- Proactivité -------------------
-    PROACTIVE_ENABLED: bool = False
-    PROACTIVE_HEARTBEAT_INTERVAL_SECONDS: int = 300
-    PROACTIVE_DEDUP_COOLDOWN_MINUTES: int = 30
-    PROACTIVE_SILENT_MODE: bool = False
-
-    # --- Apprentissage comportemental ------------------------------
-    BEHAVIOR_LOG_ENABLED: bool = True
 
     # --- Contrôle du navigateur -------------------------------------------
     BROWSER_HEADLESS: bool = False
-
-    # --- Rappels natifs à l'OS ------
-    NATIVE_SCHEDULING_ENABLED: bool = True
-
-    # --- Briefing du matin --------------------------
-    MORNING_BRIEFING_ENABLED: bool = False
-    MORNING_BRIEFING_TIME: str = "07:30"
-
-    # --- Curator nocturne ------
-    CURATOR_ENABLED: bool = True
-    CURATOR_TIME: str = "03:30"
 
     # --- Avatar 3D (compagnon animé) --------------------------------------------------
     AVATAR_ENABLED: bool = True

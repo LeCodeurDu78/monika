@@ -15,24 +15,16 @@ from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
-from tools.knowledge.memory_tools import memory_control, export_memory_markdown
+from tools.knowledge.memory_tools import memory_control
 from tools.knowledge.rag_tools import rag_control
 from tools.knowledge.graph_tools import graph_search, graph_backfill
 from tools.vision.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool, patch_existing_file
 from tools.system.browser_tools import browser_control
-from tools.system.reservation_tools import reservation_control
 from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
-from tools.utils.reminder_tools import reminder_control
 from tools.utils.scheduler_tools import scheduler_control
-from tools.utils.topic_tools import topic_watch_control
-from tools.utils.briefing_tools import run_morning_briefing
-from tools.system.screen_context_tools import get_screen_context
-from tools.system.behavior_tools import behavior_control
-from tools.system.curator import run_nightly_curator, get_curator_reports
-from agents.proactive import proactive_control, list_initiatives
 
 
 @dataclass
@@ -104,8 +96,8 @@ TOOL_DEFS: list[ToolDef] = [
         system_control,
         "Contrôle les fonctionnalités du système Linux : volume GLOBAL de l'OS (volume_up/volume_down, "
         "via pamixer — affecte tout le son de la machine, pas seulement Spotify), capture d'écran brute "
-        "sans analyse (screenshot — si l'utilisateur veut que Monika LISE l'écran, préfère get_screen_context "
-        "ou analyze_image), et media_toggle (touche lecture/pause générique envoyée à l'application média "
+        "sans analyse (screenshot — si l'utilisateur veut que Monika LISE l'écran, enchaîne avec "
+        "analyze_image sur le fichier produit), et media_toggle (touche lecture/pause générique envoyée à l'application média "
         "ayant le focus, quelle qu'elle soit). Pour du volume ou une lecture/pause spécifiquement Spotify, "
         "préfère spotify_control qui cible cette application précisément.",
         {
@@ -185,7 +177,7 @@ TOOL_DEFS: list[ToolDef] = [
         "Consulte la liste des événements ou ajoute un rendez-vous dans Google Calendar. À réserver aux "
         "événements structurés avec un horaire de début/fin et éventuellement un lieu (rendez-vous, "
         "réunion, cours). Pour un simple rappel ponctuel sans notion de durée (\"rappelle-moi de...\"), "
-        "préfère reminder_control, plus léger et annoncé automatiquement par Monika à l'échéance.",
+        "préfère scheduler_control (schedule_type='once').",
         {
             "action": {
                 "type": "string",
@@ -324,9 +316,8 @@ TOOL_DEFS: list[ToolDef] = [
         analyze_image,
         "Analyse visuellement un FICHIER image déjà présent sur le disque (photo, capture d'écran "
         "déjà enregistrée, schéma envoyé par l'utilisateur...) : extraire du texte, lire des erreurs, "
-        "décrire une image. Pour comprendre ce qui est affiché à l'écran EN CE MOMENT, préfère "
-        "get_screen_context (plus rapide, déjà structuré) ; n'utilise system_control(screenshot) puis "
-        "analyze_image que si l'utilisateur veut explicitement conserver la capture comme fichier.",
+        "décrire une image. Pour comprendre ce qui est affiché à l'écran EN CE MOMENT, utilise "
+        "system_control(screenshot) puis analyze_image sur le fichier produit.",
         {
             "image_path": {
                 "type": "string",
@@ -395,7 +386,7 @@ TOOL_DEFS: list[ToolDef] = [
         "utilise full=False (aperçu court, par défaut) sauf besoin réel d'extraire un contenu détaillé "
         "(liste de résultats, article, formulaire complexe), auquel cas passe full=True. Pour mener une "
         "réservation web jusqu'au bout (restaurant, rendez-vous...), voir le déroulé détaillé fourni en "
-        "consigne système, et utilise 'reservation_control' pour l'archiver une fois confirmée.",
+        "consigne système.",
         {
             "action": {
                 "type": "string",
@@ -457,89 +448,6 @@ TOOL_DEFS: list[ToolDef] = [
         ["action"],
     ),
     ToolDef(
-        reservation_control,
-        "Archive localement une réservation web réelle (restaurant, rendez-vous...) une fois qu'elle a "
-        "été effectivement confirmée sur le site via 'browser_control', et propose de l'ajouter au "
-        "calendrier et/ou de créer un rappel avant l'échéance. À utiliser en fin de scénario de "
-        "réservation, jamais avant la confirmation réelle côté site (ne pas enregistrer une réservation "
-        "qui n'a pas été validée). N'annule et ne modifie rien côté prestataire : action='cancel' ne fait "
-        "que marquer l'enregistrement local comme annulé — une vraie annulation doit être faite via "
-        "'browser_control' ou en contactant le prestataire.",
-        {
-            "action": {
-                "type": "string",
-                "enum": ["save", "list", "get", "cancel", "delete"],
-                "description": "L'action à effectuer.",
-            },
-            "title": {
-                "type": "string",
-                "description": "Titre court de la réservation, ex: 'Table pour 2 chez Le Petit Zinc' "
-                "(requis pour action='save').",
-            },
-            "provider": {
-                "type": "string",
-                "description": "Nom du restaurant, praticien ou prestataire.",
-            },
-            "scheduled_at": {
-                "type": "string",
-                "description": "Date/heure ISO de la réservation, ex: '2026-09-12T20:00:00'.",
-            },
-            "party_size": {
-                "type": "integer",
-                "description": "Nombre de personnes (réservation restaurant), si applicable.",
-            },
-            "contact_name": {
-                "type": "string",
-                "description": "Nom utilisé pour la réservation.",
-            },
-            "contact_phone": {
-                "type": "string",
-                "description": "Téléphone utilisé pour la réservation.",
-            },
-            "contact_email": {
-                "type": "string",
-                "description": "E-mail utilisé pour la réservation.",
-            },
-            "confirmation_reference": {
-                "type": "string",
-                "description": "Numéro/texte de confirmation affiché par le site après validation, si disponible.",
-            },
-            "source_url": {
-                "type": "string",
-                "description": "URL de la page de confirmation ou du site de réservation.",
-            },
-            "notes": {
-                "type": "string",
-                "description": "Toute information complémentaire utile (motif du rendez-vous, demandes particulières...).",
-            },
-            "duration_minutes": {
-                "type": "integer",
-                "description": "Durée estimée de l'événement en minutes pour l'ajout au calendrier (défaut 120).",
-            },
-            "add_to_calendar": {
-                "type": "boolean",
-                "description": "Si true, ajoute automatiquement un événement Google Calendar (requiert 'scheduled_at').",
-            },
-            "add_reminder": {
-                "type": "boolean",
-                "description": "Si true, crée un rappel avant l'échéance (requiert 'scheduled_at').",
-            },
-            "reminder_minutes_before": {
-                "type": "integer",
-                "description": "Nombre de minutes avant 'scheduled_at' pour déclencher le rappel (défaut 120).",
-            },
-            "reservation_id": {
-                "type": "integer",
-                "description": "Identifiant de la réservation (requis pour 'get', 'cancel' et 'delete').",
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Nombre maximum de réservations à lister pour action='list' (défaut 10).",
-            },
-        },
-        ["action"],
-    ),
-    ToolDef(
         spotify_control,
         "Permet de contrôler Spotify spécifiquement : lire de la musique, mettre en pause, passer un "
         "morceau, changer le VOLUME DE L'APPLICATION SPOTIFY (indépendant du volume global de l'OS, "
@@ -596,33 +504,8 @@ TOOL_DEFS: list[ToolDef] = [
         ["recipient", "message"],
     ),
     ToolDef(
-        reminder_control,
-        "Crée, liste ou supprime des rappels avec échéance (ex: \"rappelle-moi de renouveler mon passeport avant le 20 mars\"). Un rappel arrivé à échéance est annoncé automatiquement par Monika, sans que l'utilisateur ait à demander. Pour un vrai rendez-vous avec horaire de fin/lieu à faire apparaître dans l'agenda, préfère calendar_control ; pour que Monika exécute réellement une action à l'échéance plutôt que de simplement l'annoncer, préfère scheduler_control.",
-        {
-            "action": {
-                "type": "string",
-                "enum": ["add", "list", "delete", "due"],
-                "description": "'add' pour créer un rappel, 'list' pour voir les prochains rappels, 'delete' pour en supprimer un, 'due' pour voir ceux arrivés à échéance et pas encore annoncés.",
-            },
-            "message": {"type": "string", "description": "Le texte du rappel (requis pour action='add')."},
-            "due_at": {
-                "type": "string",
-                "description": "Date et heure d'échéance au format ISO (ex: '2026-08-20T09:00:00'), requis pour action='add'.",
-            },
-            "reminder_id": {
-                "type": "integer",
-                "description": "Identifiant du rappel à supprimer (requis pour action='delete', voir la liste via action='list').",
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Nombre de rappels à afficher pour action='list' (par défaut 10).",
-            },
-        },
-        ["action"],
-    ),
-    ToolDef(
         scheduler_control,
-        "Planifie l'exécution AUTONOME d'une instruction par Monika elle-même : contrairement à reminder_control qui se contente d'annoncer un message, ici Monika appelle réellement les outils nécessaires (météo, e-mails, recherche web...) pour accomplir la tâche, sans intervention de l'utilisateur. Une seule fois, tous les jours, ou en boucle à intervalle régulier.",
+        "Planifie l'exécution AUTONOME d'une instruction par Monika elle-même : Monika appelle réellement les outils nécessaires (météo, e-mails, recherche web...) pour accomplir la tâche à l'échéance, sans intervention de l'utilisateur ; convient aussi pour un simple rappel (ex: instruction « rappelle-moi de... »). Une seule fois, tous les jours, ou en boucle à intervalle régulier.",
         {
             "action": {
                 "type": "string",
@@ -656,116 +539,6 @@ TOOL_DEFS: list[ToolDef] = [
             },
         },
         ["action"],
-    ),
-    ToolDef(
-        get_screen_context,
-        "Renvoie un résumé STRUCTURÉ de ce qui est actuellement affiché à l'écran : application "
-        "active, titre de fenêtre, texte exact extrait par OCR (URLs, messages d'erreur, noms de "
-        "fichiers), et une estimation de l'activité en cours. Plus précis que analyze_image pour "
-        "du texte exact ; utile pour comprendre le contexte de travail actuel de l'utilisateur "
-        "avant d'agir ou de répondre.",
-    ),
-    ToolDef(
-        behavior_control,
-        "Consulte ('show') ou vide ('reset') le journal des habitudes d'usage de Monika (outils "
-        "préférés, heures d'usage, corrections répétées de l'utilisateur). Utilise ce journal pour "
-        "affiner tes réponses, et propose 'reset' si l'utilisateur exprime une préoccupation de "
-        "vie privée à ce sujet.",
-        {
-            "action": {
-                "type": "string",
-                "enum": ["show", "reset"],
-                "description": "'show' pour afficher le résumé comportemental, 'reset' pour vider le journal.",
-            }
-        },
-        ["action"],
-    ),
-    ToolDef(
-        proactive_control,
-        "Active ou désactive le mode silencieux des interventions autonomes de Monika (celles "
-        "qu'elle prend de sa propre initiative, sans qu'on le lui demande). Utilise 'silence' si "
-        "l'utilisateur demande explicitement à ne plus être dérangé/interrompu spontanément (ex: "
-        "'tais-toi', 'arrête de m'interrompre'), 'resume' pour réactiver, 'status' pour vérifier "
-        "l'état actuel.",
-        {
-            "action": {
-                "type": "string",
-                "enum": ["silence", "resume", "status"],
-                "description": "Action à effectuer sur le mode silencieux des interventions autonomes.",
-            }
-        },
-        ["action"],
-    ),
-    ToolDef(
-        topic_watch_control,
-        "Gère la liste des sujets que Monika surveille quotidiennement pour son briefing du matin "
-        "(ex: \"surveille les sorties de la PS6\", \"arrête de surveiller le bitcoin\", \"quels sujets "
-        "surveilles-tu ?\"). Chaque sujet surveillé est recherché une fois par jour au moment du "
-        "briefing, et Monika ne signale que les nouveautés détectées depuis la veille.",
-        {
-            "action": {
-                "type": "string",
-                "enum": ["add", "remove", "list"],
-                "description": "'add' pour ajouter un sujet à surveiller, 'remove' pour en retirer un, 'list' pour voir tous les sujets actuellement surveillés.",
-            },
-            "topic": {
-                "type": "string",
-                "description": "Le sujet à surveiller ou à retirer, en langage naturel (ex: 'sortie de la PS6', 'prix du Bitcoin'). Requis pour action='add' et action='remove'.",
-            },
-        },
-        ["action"],
-    ),
-    ToolDef(
-        export_memory_markdown,
-        "Régénère le miroir Markdown en lecture seule de la mémoire long terme de Monika (un "
-        "fichier par catégorie, ex: preferences.md, projets.md), pour inspection humaine directe "
-        "sans passer par memory_control. Normalement régénéré automatiquement chaque nuit par le "
-        "curator ; à utiliser seulement si l'utilisateur demande explicitement une régénération "
-        "immédiate.",
-    ),
-    ToolDef(
-        list_initiatives,
-        "Liste les initiatives autonomes récentes de Monika (décisions prises de sa propre "
-        "initiative, exécutées, filtrées, silencieuses ou échouées) — utile pour répondre à « qu'as-tu "
-        "fait/prévu aujourd'hui ? ».",
-        {
-            "days": {
-                "type": "integer",
-                "description": "Nombre de jours à couvrir (par défaut 1, aujourd'hui uniquement).",
-            },
-            "status": {
-                "type": "string",
-                "enum": ["exécutée", "filtrée", "silencieuse", "échouée"],
-                "description": "Filtre optionnel par statut. Laisser vide pour tout afficher.",
-            },
-        },
-    ),
-    ToolDef(
-        run_morning_briefing,
-        "Compose et livre immédiatement le briefing du matin (résumé de la veille, météo, "
-        "actualités, nouveautés sur les sujets surveillés via topic_watch_control). Normalement "
-        "déclenché automatiquement une fois par jour si activé en configuration ; à utiliser "
-        "seulement si l'utilisateur demande explicitement son briefing maintenant (ex: "
-        "\"fais-moi le point du matin\", \"quoi de neuf sur mes sujets surveillés ?\").",
-    ),
-    ToolDef(
-        run_nightly_curator,
-        "Génère immédiatement le rapport de curation nocturne de Monika (comportement récent, "
-        "initiatives autonomes du jour, faits contredits/à revoir de la mémoire tracée). "
-        "Normalement déclenché automatiquement une fois par nuit ; à utiliser seulement si "
-        "l'utilisateur demande explicitement une curation immédiate.",
-    ),
-    ToolDef(
-        get_curator_reports,
-        "Relit les rapports de curation nocturne déjà générés (comportement, initiatives, faits "
-        "à revoir), sans en générer un nouveau. Utile pour « qu'as-tu observé cette nuit ? » ou "
-        "« montre-moi le dernier rapport de curation ».",
-        {
-            "days": {
-                "type": "integer",
-                "description": "Nombre de jours à couvrir (par défaut 7).",
-            },
-        },
     ),
 ]
 

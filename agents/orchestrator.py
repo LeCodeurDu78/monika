@@ -10,7 +10,7 @@ AGENT_SYSTEM_PROMPT = (
     SYSTEM_PROMPT + " "
     "Tu disposes directement de tous les outils nécessaires (système, fichiers, e-mails, "
     "calendrier, WhatsApp, contacts, recherche web, mémoire long terme, RAG, graphe de "
-    "connaissances, météo, Spotify, rappels, tâches planifiées, etc.). Utilise-les "
+    "connaissances, météo, Spotify, tâches planifiées et rappels, etc.). Utilise-les "
     "directement dès que c'est pertinent, sans jamais mentionner leur existence ni ta "
     "façon de procéder, et réponds toujours en français de façon concise.\n\n"
     "SCÉNARIO DE RÉSERVATION WEB (restaurant, rendez-vous...) via browser_control : pour "
@@ -24,8 +24,8 @@ AGENT_SYSTEM_PROMPT = (
     "coordonnées utilisées, prix éventuel) et obtenir sa confirmation explicite, SAUF si "
     "l'utilisateur avait déjà donné ces informations précises dans sa demande initiale -> "
     "click_element sur le bouton de validation -> lire la page de confirmation "
-    "(read_page_content) pour en extraire le numéro/texte de confirmation -> enregistrer la "
-    "réservation avec l'outil 'reservation_control' (action='save'). Ne saisis JAMAIS "
+    "(read_page_content) pour en extraire le numéro/texte de confirmation et le communiquer "
+    "à l'utilisateur. Ne saisis JAMAIS "
     "d'informations de paiement (numéro de carte bancaire...) sans confirmation explicite de "
     "l'utilisateur pour cette réservation précise."
 )
@@ -42,15 +42,6 @@ SCHEDULED_TASK_CONTEXT = (
     "faite, il s'agit maintenant de l'exécuter réellement, pas de la reporter."
 )
 
-SCHEDULED_TASK_WAKE_CONTEXT = (
-    "Contexte : l'échéance d'une tâche planifiée précédemment vient d'arriver, et le "
-    "process principal de Monika n'était pas actif — tu as été relancée ponctuellement "
-    "par le planificateur natif de l'OS, uniquement pour exécuter cette tâche. Utilise "
-    "directement les outils nécessaires (météo, e-mails, recherche web, WhatsApp...) "
-    "pour l'accomplir MAINTENANT, sans intervention de l'utilisateur, puis termine. "
-    "N'appelle PAS scheduler_control : la planification est déjà faite."
-)
-
 
 def process_user_message(
     messages: list,
@@ -60,7 +51,7 @@ def process_user_message(
 ) -> str:
     """Traite le message de l'utilisateur avec un unique agent doté de tous les outils.
 
-    `context` permet à l'appelant (tâche planifiée, réveil natif, briefing...) d'ajouter des
+    `context` permet à l'appelant (tâche planifiée...) d'ajouter des
     consignes situationnelles au prompt système sans que celles-ci soient écrasées : elles sont
     concaténées à AGENT_SYSTEM_PROMPT plutôt que de le remplacer, ou l'inverse.
     """
