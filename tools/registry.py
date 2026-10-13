@@ -15,9 +15,6 @@ from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
 from tools.utils.project_tools import create_full_project
 from tools.system.terminal_tools import run_script
-from tools.knowledge.memory_tools import memory_control
-from tools.knowledge.rag_tools import rag_control
-from tools.knowledge.graph_tools import graph_search, graph_backfill
 from tools.vision.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool, patch_existing_file
 from tools.system.browser_tools import browser_control
@@ -25,6 +22,8 @@ from tools.utils.spotify_tools import spotify_control
 from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.scheduler_tools import scheduler_control
+from tools.utils.memory_tools import user_memory, deep_memory
+from core.settings import settings
 
 
 @dataclass
@@ -143,9 +142,7 @@ TOOL_DEFS: list[ToolDef] = [
     ToolDef(
         web_search,
         "Effectue des recherches en ligne sur Wikipédia ou sur le Web, pour de l'information EXTERNE et "
-        "publique (actualité, culture générale, prix, comparatifs). Pour ce que Monika sait déjà sur "
-        "l'utilisateur ou ses documents personnels, préfère memory_control ou rag_control : ne cherche pas "
-        "sur le web une information que l'utilisateur a pu lui confier directement. Le paramètre 'mode' "
+        "publique (actualité, culture générale, prix, comparatifs). Le paramètre 'mode' "
         "adapte la requête et la source privilégiée selon l'intention (actualités récentes, recherche "
         "approfondie, prix, comparatif, ou recherche générale) et ne s'applique que pour "
         "source='duckduckgo'.",
@@ -242,75 +239,6 @@ TOOL_DEFS: list[ToolDef] = [
             },
         },
         ["command"],
-    ),
-    ToolDef(
-        memory_control,
-        "Stocke ou recherche des informations importantes à long terme (préférences de l'utilisateur, chemins de projets, règles de code, faits personnels explicitement énoncés). La recherche ('search') est sémantique : elle retrouve les souvenirs par sens, pas seulement par mot-clé exact. Réservé aux faits courts que Monika doit retenir elle-même ; pour interroger le contenu de documents entiers (PDF, notes...), utilise rag_control, et pour une relation précise entre entités déjà extraites de ces documents, graph_search.",
-        {
-            "action": {
-                "type": "string",
-                "enum": ["save", "search", "list"],
-                "description": "'save' pour enregistrer/mettre à jour une mémoire, 'search' pour chercher par sens/mot-clé, 'list' pour tout afficher.",
-            },
-            "key": {
-                "type": "string",
-                "description": "Pour 'save' : clé d'identification (ex: 'editeur_prefere'). Pour 'search' : le texte de la requête (ex: 'éditeur de code').",
-            },
-            "value": {
-                "type": "string",
-                "description": "L'information exacte à retenir (requise si action='save').",
-            },
-            "category": {
-                "type": "string",
-                "description": "Catégorie facultative (ex: 'preferences', 'projets', 'regles').",
-            },
-        },
-        ["action"],
-    ),
-    ToolDef(
-        rag_control,
-        "RAG (Retrieval-Augmented Generation) sur les documents personnels de l'utilisateur : indexe des fichiers (PDF, Word, texte, markdown...) puis retrouve par sens les passages pertinents pour répondre à une question, avec la source exacte. Utilise cet outil dès que l'utilisateur pose une question sur le contenu d'un de ses fichiers/documents déjà indexés, ou demande d'indexer/ajouter un document à sa base de connaissances.",
-        {
-            "action": {
-                "type": "string",
-                "enum": ["ingest", "search", "list", "delete"],
-                "description": "'ingest' pour indexer un fichier ou un dossier, 'search' pour interroger les documents indexés, 'list' pour voir les documents indexés, 'delete' pour en retirer un.",
-            },
-            "path": {
-                "type": "string",
-                "description": "Chemin du fichier ou dossier à indexer (requis pour action='ingest'). Formats acceptés : .txt, .md, .csv, .json, .py, .log, .pdf, .docx.",
-            },
-            "query": {
-                "type": "string",
-                "description": "La question ou les termes de recherche (requis pour action='search').",
-            },
-            "doc_name": {
-                "type": "string",
-                "description": "Chemin exact du document à retirer de l'index, tel qu'affiché par action='list' (requis pour action='delete').",
-            },
-        },
-        ["action"],
-    ),
-    ToolDef(
-        graph_search,
-        "Interroge le graphe de connaissances (entités + relations extraites des documents indexés via rag_control) pour répondre à des questions RELATIONNELLES précises entre des éléments identifiés (ex: 'qui a recommandé quoi à qui', 'quel projet dépend de quel outil', 'où habite X'). Complète rag_search : préfère rag_control(search) pour retrouver un passage de texte par similarité, et graph_search pour une relation précise entre entités déjà connues du graphe.",
-        {
-            "query": {
-                "type": "string",
-                "description": "La question relationnelle posée en langage naturel (ex: 'qui a recommandé le restaurant à Adam ?').",
-            }
-        },
-        ["query"],
-    ),
-    ToolDef(
-        graph_backfill,
-        "Force l'extraction immédiate des entités/relations pour les documents déjà indexés via rag_control mais pas encore intégrés au graphe de connaissances (normalement fait automatiquement par petits lots à chaque graph_search, mais utile après une grosse indexation pour ne pas attendre).",
-        {
-            "limit": {
-                "type": "integer",
-                "description": "Nombre maximum de chunks à traiter en une fois (par défaut 200).",
-            }
-        },
     ),
     ToolDef(
         analyze_image,
@@ -541,6 +469,73 @@ TOOL_DEFS: list[ToolDef] = [
         ["action"],
     ),
 ]
+
+# Outils de mémoire : déclarés seulement si la mémoire correspondante est activée (voir core/settings.py).
+if settings.MEM0_ENABLED:
+    TOOL_DEFS.append(
+        ToolDef(
+            user_memory,
+            "Mémoire RAPIDE sur l'utilisateur (mem0) : petits faits personnels et préférences durables "
+            "(prénom, proches, ville, travail, goûts, habitudes, façon de répondre souhaitée...). Les faits "
+            "pertinents sont DÉJÀ ajoutés automatiquement à son message dans un bloc « Mémoire rapide » : "
+            "n'appelle cet outil que pour 'add' (retenir explicitement un fait quand l'utilisateur le "
+            "demande : « retiens que... »), 'search' (chercher un fait absent du bloc), 'list' (dire tout ce "
+            "que tu sais de lui) ou 'delete' (oublier un fait : « oublie que... » ; fais d'abord 'search' ou "
+            "'list' pour obtenir son memory_id). Pour des projets, des décisions, des événements ou des "
+            "échanges passés, utilise deep_memory.",
+            {
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "search", "list", "delete"],
+                    "description": "'add' retient un fait, 'search' cherche, 'list' liste tout, 'delete' oublie un fait.",
+                },
+                "text": {
+                    "type": "string",
+                    "description": "Pour 'add' : le fait à retenir, rédigé de façon complète et autonome "
+                    "(ex: \"Ma sœur s'appelle Léa et habite à Lyon\"). Pour 'search' : ce qu'on cherche.",
+                },
+                "memory_id": {
+                    "type": "string",
+                    "description": "Identifiant du souvenir à oublier (requis pour 'delete'), tel qu'affiché par 'search' ou 'list'.",
+                },
+            },
+            ["action"],
+        )
+    )
+
+if settings.HINDSIGHT_ENABLED:
+    TOOL_DEFS.append(
+        ToolDef(
+            deep_memory,
+            "Mémoire LONG TERME (Hindsight) : projets de l'utilisateur et leur avancement, décisions et leurs "
+            "raisons, événements, conversations passées, enseignements tirés. 'reflect' (à privilégier) "
+            "répond à une question en raisonnant sur l'ensemble des souvenirs (ex: « où en est-on sur "
+            "l'avatar 3D ? », « qu'avons-nous décidé pour... ? », « que sais-tu de ma façon de travailler ? ») ; "
+            "'recall' renvoie les souvenirs bruts les plus pertinents (pour vérifier un détail précis ou une "
+            "date) ; 'retain' enregistre explicitement une information importante à ne pas perdre (décision, "
+            "conclusion, résultat). Les conversations sont déjà mémorisées automatiquement en arrière-plan : "
+            "n'utilise 'retain' que pour consigner quelque chose d'explicite.",
+            {
+                "action": {
+                    "type": "string",
+                    "enum": ["reflect", "recall", "retain"],
+                    "description": "'reflect' répond à une question à partir des souvenirs, 'recall' renvoie les "
+                    "souvenirs bruts, 'retain' en enregistre un.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Pour 'reflect' et 'recall' : la question ou le sujet, formulé de façon "
+                    "complète (ex: \"Où en est le projet d'avatar 3D de Monika ?\").",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Pour 'retain' : l'information à enregistrer, rédigée de façon autonome "
+                    "(sujet, décision, raison, date si utile).",
+                },
+            },
+            ["action"],
+        )
+    )
 
 AVAILABLE_TOOLS: dict[str, Callable[..., Any]] = {t.name: t.func for t in TOOL_DEFS}
 TOOLS_SCHEMA: list[dict] = [t.to_schema() for t in TOOL_DEFS]

@@ -12,6 +12,7 @@ from config import SYSTEM_PROMPT, EXIT_WORDS
 from agents.orchestrator import SCHEDULED_TASK_CONTEXT, process_user_message
 from core.settings import settings
 from core.watcher import start_watcher
+from memory.manager import memory_manager
 from tools.utils.scheduler_tools import pop_due_tasks
 from voice.voice_audio import record_until_silence
 from voice.voice_stt import transcribe
@@ -142,6 +143,9 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
 def _run_monika(channel: Channel, greeting: str) -> None:
     """Lance une session Monika complète (watchers, boucle, nettoyage) pour un `Channel` donné."""
     print(greeting)
+    # Les mémoires s'initialisent en arrière-plan (chargement du modèle d'embedding, connexion à Hindsight)
+    # pendant que l'avatar et la voix démarrent : elles sont prêtes bien avant le premier message.
+    memory_manager.start()
     start_avatar_server()
     if channel.speak_replies:
         speak("Bonjour, je t'écoute.")
@@ -152,6 +156,7 @@ def _run_monika(channel: Channel, greeting: str) -> None:
     finally:
         for stop_event in stop_events:
             stop_event.set()
+        memory_manager.shutdown()  # envoie les derniers échanges aux mémoires avant de quitter
 
 
 def run_monika() -> None:

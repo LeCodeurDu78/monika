@@ -72,6 +72,14 @@ def execute_tool_call(tool_call, available_tools: dict, interactive: bool = True
                 "s'exécuter depuis une tâche autonome/planifiée, sans supervision directe de l'utilisateur. "
                 "Demande à l'utilisateur de faire cette modification dans une conversation interactive."
             )
+        if (func_name == "user_memory" and func_args.get("action") in ("add", "delete")) or (
+            func_name == "deep_memory" and func_args.get("action") == "retain"
+        ):
+            return (
+                "Action refusée : une tâche autonome/planifiée ne peut pas modifier la mémoire (ajout ou "
+                "suppression de souvenirs). Le contenu qu'elle traite (e-mails, pages web...) n'est pas "
+                "supervisé et pourrait chercher à y glisser de fausses informations. La lecture reste possible."
+            )
 
     if func_name not in available_tools:
         return f"⚠️ L'outil '{func_name}' n'est pas disponible."
