@@ -68,7 +68,7 @@ _STYLE_VOICE = """
 
 _METHOD = """
 ## Méthode de travail
-- Demande simple : agis directement.down simple (listes, blocs de code) quand cela 
+- Demande simple : agis directement.
 - Tâche à plusieurs étapes : décide des étapes, exécute-les avec les outils, puis vérifie le résultat réel avant de dire que c'est terminé.
 - Si un outil échoue, lis le message d'erreur, corrige les arguments ou tente une autre approche avant d'abandonner. Ne signale un échec qu'après avoir essayé.
 - Ambiguïté mineure : retiens l'hypothèse la plus plausible, agis, et mentionne-la en une phrase. Pose une seule question courte quand l'action est irréversible ou sensible (envoyer un message ou un e-mail, supprimer, payer, réserver) et qu'il manque un détail essentiel, ou quand plusieurs interprétations très différentes sont possibles.

@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     TOOL_RESULT_SPILL_TO_DISK: bool = True
     TOOL_RESULT_SPILL_RETENTION_DAYS: int = 7
 
+    # --- Boucle d'agent ----------------------------------------------------------------
+    # Un même appel d'outil (mêmes arguments) qui a déjà donné deux fois le même résultat n'est pas relancé
+    # une troisième fois : on renvoie au modèle un avertissement au lieu d'user les étapes en boucle.
+    LOOP_REPEAT_LIMIT: int = 3
+    # Outils marqués `lent` : la phrase d'attente n'est dite que si l'outil dépasse ce délai, et au plus
+    # WAIT_PHRASE_MAX_PER_TURN fois par message de l'utilisateur.
+    WAIT_PHRASE_DELAY_SECONDS: float = 1.5
+    WAIT_PHRASE_MAX_PER_TURN: int = 2
+
     # --- run_script ------------------------------------------------------------------
     SCRIPT_TIMEOUT_SECONDS: int = 120
     SCRIPT_MAX_TIMEOUT_SECONDS: int = 900
@@ -60,6 +69,25 @@ class Settings(BaseSettings):
     EMAIL_PASS: Optional[str] = None
     IMAP_SERVER: str = "imap.gmail.com"
     SMTP_SERVER: str = "smtp.gmail.com"
+
+    # --- Discord (bot) ------------------------------------------------------------
+    DISCORD_BOT_TOKEN: Optional[str] = None
+    DISCORD_DEFAULT_CHANNEL_ID: Optional[str] = None  # salon utilisé si aucun destinataire n'est précisé
+    # Écouteur : Monika répond aux messages Discord. ATTENTION : qui peut lui écrire la pilote (fichiers,
+    # commandes...). Désactivé par défaut ; seuls les identifiants listés ici sont écoutés.
+    DISCORD_LISTEN: bool = False
+    DISCORD_ALLOWED_USER_IDS: str = ""  # identifiants séparés par des virgules ; le premier reçoit les notifications
+    DISCORD_LISTEN_CHANNEL_IDS: str = ""  # salons où répondre sans @mention (en plus des MP et des @mentions)
+    # Lire le texte des salons hors @mention exige d'activer « Message Content Intent » dans le portail Discord.
+    DISCORD_MESSAGE_CONTENT_INTENT: bool = False
+    DISCORD_FORWARD_SCHEDULED: bool = True  # envoie aussi en MP le résultat des tâches planifiées
+    # Pièces jointes reçues sur Discord : images (analyse vision), PDF / DOCX / texte (extraction),
+    # audio et messages vocaux (transcription Whisper). Les fichiers sont gardés dans APP_DIR/discord_inbox.
+    DISCORD_ATTACHMENTS_ENABLED: bool = True
+    DISCORD_ATTACHMENT_MAX_MB: float = 20
+    DISCORD_ATTACHMENT_MAX_FILES: int = 5
+    DISCORD_ATTACHMENT_MAX_CHARS: int = 12000  # texte extrait conservé par fichier (le reste reste lisible sur disque)
+    DISCORD_ATTACHMENT_RETENTION_DAYS: int = 7
 
     # --- Voix : reconnaissance (STT, faster-whisper) ---------------------------------
     VOICE_STT_LANGUAGE: str = "fr"

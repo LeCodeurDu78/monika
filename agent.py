@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from avatar import state as avatar_state
 from avatar.server import start_avatar_server
 from config import SYSTEM_PROMPT, EXIT_WORDS
-from agents.orchestrator import SCHEDULED_TASK_CONTEXT, process_user_message
+from agents.orchestrator import DISCORD_CONTEXT, SCHEDULED_TASK_CONTEXT, process_user_message
 from core.settings import settings
 from core.watcher import start_watcher
 from memory.manager import memory_manager
@@ -55,6 +55,15 @@ class Channel:
         if self.speak_replies:
             with self._speech_lock:
                 speak(text)
+
+    def say_waiting(self, text: str) -> None:
+        """Phrase d'attente pendant qu'un outil lent tourne (voir le drapeau `lent` dans tools/registry.py).
+
+        Appelée depuis un autre thread que la boucle de session : on ne touche donc pas à l'état de
+        l'avatar (la session le pilote) ; en mode vocal, `_maybe_speak` sérialise la parole avec le verrou.
+        """
+        print(f"\n⏳ Monika: {text}")
+        self._maybe_speak(text)
 
     def deliver(self, text: str, icon: Optional[str] = None) -> None:
         """Affiche (et, en mode vocal, prononce) un message de Monika."""
@@ -118,7 +127,7 @@ def _run_session(channel: Channel) -> None:
             snapshot = list(messages)
             messages.append({"role": "user", "content": user_text})
             try:
-                bot_reply = process_user_message(messages, voice=channel.speak_replies)
+                bot_reply = process_user_message(messages, voice=channel.speak_replies, on_wait=channel.say_waiting)
             except Exception as e:
                 messages[:] = snapshot
                 print(f"⚠️ [Erreur] {type(e).__name__}: {e}")
@@ -130,7 +139,22 @@ def _run_session(channel: Channel) -> None:
         channel.deliver("Au revoir !")
 
 
-def _start_background_watchers(channel: Channel) -> list[threading.Event]:
+def _start_discord_listener():
+    """Démarre l'écoute des messages Discord si DISCORD_LISTEN=true ; renvoie l'écouteur actif ou None."""
+    if not settings.DISCORD_LISTEN:
+        return None
+    # Import tardif : discord.py n'est requis que si l'écoute est activée.
+    from integrations.discord_listener import DiscordListener
+
+    listener = DiscordListener(
+        lambda messages, on_wait=None: process_user_message(
+            messages, context=DISCORD_CONTEXT, voice=False, on_wait=on_wait
+        )
+    )
+    return listener if listener.start() else None
+
+
+def _start_background_watchers(channel: Channel, discord_listener=None) -> list[threading.Event]:
     """Démarre le thread de fond de Monika (tâches planifiées) et renvoie ses événements d'arrêt."""
 
     def _scheduler_tick() -> None:
@@ -147,6 +171,8 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
             except Exception as e:
                 result = f"⚠️ Échec de la tâche planifiée #{task_id} : {e}"
             channel.deliver(result, icon="🗓️")
+            if discord_listener is not None and settings.DISCORD_FORWARD_SCHEDULED:
+                discord_listener.notify_owner(f"🗓️ {result}")  # l'utilisateur n'est pas forcément devant le terminal
 
     watchers = [start_watcher(settings.SCHEDULER_CHECK_INTERVAL_SECONDS, _scheduler_tick)]
     if settings.RAG_ENABLED:
@@ -166,12 +192,15 @@ def _run_monika(channel: Channel, greeting: str) -> None:
     if channel.speak_replies:
         speak("Bonjour, je t'écoute.")
 
-    stop_events = _start_background_watchers(channel)
+    discord_listener = _start_discord_listener()
+    stop_events = _start_background_watchers(channel, discord_listener)
     try:
         _run_session(channel)
     finally:
         for stop_event in stop_events:
             stop_event.set()
+        if discord_listener is not None:
+            discord_listener.stop()
         memory_manager.shutdown()  # envoie les derniers échanges aux mémoires avant de quitter
 
 

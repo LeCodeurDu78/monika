@@ -33,3 +33,4 @@ pyflakes==4.0.3
 google-api-python-client==2.201.0
 google-auth-oauthlib==1.5.0
 tokenizers==0.22.2
+discord.py==2.7.1

@@ -1,5 +1,7 @@
 """Reconnaissance vocale locale via faster-whisper (CTranslate2)."""
 
+import threading
+
 import numpy as np
 from faster_whisper import WhisperModel
 from core.settings import settings
@@ -10,14 +12,16 @@ STT_COMPUTE_TYPE = settings.VOICE_STT_COMPUTE_TYPE
 STT_LANGUAGE = settings.VOICE_STT_LANGUAGE
 
 _model = None
+_model_lock = threading.Lock()  # la voix et les pièces jointes Discord peuvent demander le modèle en même temps
 
 
 def _get_model() -> WhisperModel:
     global _model
-    if _model is None:
-        print(f"Chargement du modèle Whisper '{STT_MODEL_SIZE}' " f"({STT_DEVICE}/{STT_COMPUTE_TYPE})...")
-        _model = WhisperModel(STT_MODEL_SIZE, device=STT_DEVICE, compute_type=STT_COMPUTE_TYPE)
-    return _model
+    with _model_lock:
+        if _model is None:
+            print(f"Chargement du modèle Whisper '{STT_MODEL_SIZE}' " f"({STT_DEVICE}/{STT_COMPUTE_TYPE})...")
+            _model = WhisperModel(STT_MODEL_SIZE, device=STT_DEVICE, compute_type=STT_COMPUTE_TYPE)
+        return _model
 
 
 def transcribe(audio_float32: np.ndarray, sample_rate: int = 16000) -> str:
@@ -33,6 +37,18 @@ def transcribe(audio_float32: np.ndarray, sample_rate: int = 16000) -> str:
     model = _get_model()
     segments, _info = model.transcribe(
         audio_float32,
+        language=STT_LANGUAGE,
+        vad_filter=True,
+        beam_size=5,
+    )
+    return " ".join(segment.text.strip() for segment in segments).strip()
+
+
+def transcribe_file(path: str) -> str:
+    """Transcrit un fichier audio (ogg, opus, mp3, wav, m4a...) ; faster-whisper le décode lui-même (PyAV)."""
+    model = _get_model()
+    segments, _info = model.transcribe(
+        str(path),
         language=STT_LANGUAGE,
         vad_filter=True,
         beam_size=5,

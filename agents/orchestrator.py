@@ -2,20 +2,24 @@
 
 from datetime import datetime
 from pathlib import Path
+from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
 from config import build_persona_prompt
 from agents.runtime import run_react_loop
+from core.serial_executor import SerialExecutor
 from core.settings import settings
 from memory.manager import memory_manager, prompt_section
-from tools.registry import AVAILABLE_TOOLS, TOOLS_SCHEMA
+from tools.registry import AVAILABLE_TOOLS, TOOLS_SCHEMA, TOOL_DEFS_BY_NAME
 from tools.guides import GUIDES
 
 MAX_TURNS = 100
 
+_AGENT_THREAD = SerialExecutor("monika-agent")
+
 _TOOLS_NOTE = (
     "## Outils\n"
-    "Tu disposes d'outils (système, fichiers, e-mails, calendrier, WhatsApp, recherche web, météo, "
+    "Tu disposes d'outils (système, fichiers, e-mails, calendrier, Discord, recherche web, météo, "
     "Spotify, rappels et tâches planifiées...). Utilise-les directement dès que c'est pertinent. "
     "Ne parle pas de tes outils dans tes réponses, sauf si on te demande ce que tu sais faire."
 )
@@ -27,9 +31,17 @@ SCHEDULED_TASK_CONTEXT = (
     "Contexte : l'échéance d'une tâche planifiée précédemment vient d'arriver. "
     "Aucun utilisateur n'est présent dans cette conversation pour répondre. "
     "Exécute l'instruction ci-dessous MAINTENANT, directement avec les outils "
-    "nécessaires pour l'accomplir (ex: send_whatsapp_message, email_control, "
+    "nécessaires pour l'accomplir (ex: send_discord_message, email_control, "
     "get_weather...). N'appelle PAS scheduler_control : la planification est déjà "
     "faite, il s'agit maintenant de l'exécuter réellement, pas de la reporter."
+)
+
+DISCORD_CONTEXT = (
+    "Contexte : l'utilisateur te parle par Discord (message privé ou salon), probablement loin de son "
+    "ordinateur. Ta réponse lui est envoyée automatiquement sur Discord : n'appelle donc PAS "
+    "send_discord_message pour lui répondre. Reste concis ; le Markdown Discord (**gras**, `code`, "
+    "listes) est accepté, évite les tableaux. Les messages Discord sont limités à 2000 caractères "
+    "(le surplus est envoyé en plusieurs messages)."
 )
 
 _JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
@@ -80,6 +92,24 @@ def process_user_message(
     interactive: bool = True,
     context: str = "",
     voice: bool = False,
+    on_wait: Optional[Callable[[str], None]] = None,
+) -> str:
+    """Traite le message de l'utilisateur avec un unique agent (voir `_process_user_message`).
+
+    Tous les tours (clavier, tâches planifiées, Discord) passent par un même thread dédié : voir
+    core/serial_executor.py. `on_wait(phrase)` est appelé (depuis un autre thread) quand un outil marqué
+    `lent` prend du temps : l'appelant dit la phrase sur son canal (voix, terminal, Discord...).
+    """
+    return _AGENT_THREAD.run(_process_user_message, messages, max_turns, interactive, context, voice, on_wait)
+
+
+def _process_user_message(
+    messages: list,
+    max_turns: int = MAX_TURNS,
+    interactive: bool = True,
+    context: str = "",
+    voice: bool = False,
+    on_wait: Optional[Callable[[str], None]] = None,
 ) -> str:
     """Traite le message de l'utilisateur avec un unique agent.
 
@@ -122,6 +152,8 @@ def process_user_message(
             AVAILABLE_TOOLS,
             max_turns=max_turns,
             interactive=interactive,
+            tool_defs=TOOL_DEFS_BY_NAME,
+            on_wait=on_wait,
         )
     finally:
         if turn_addendum:

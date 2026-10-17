@@ -21,7 +21,7 @@ from tools.vision.vision_tools import analyze_image
 from tools.meta_tools import create_custom_tool, patch_existing_file
 from tools.system.browser_tools import browser_control
 from tools.utils.spotify_tools import spotify_control
-from tools.social.whatsapp_tools import send_whatsapp_message
+from tools.social.discord_tools import send_discord_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.scheduler_tools import scheduler_control
 from tools.utils.memory_tools import user_memory, deep_memory
@@ -37,6 +37,13 @@ class ToolDef:
     description: str
     properties: dict = field(default_factory=dict)
     required: list = field(default_factory=list)
+    # Drapeaux d'exécution (jamais envoyés au modèle, voir to_schema) :
+    # - lent : l'outil prend du temps ; si l'appel dépasse WAIT_PHRASE_DELAY_SECONDS, Monika dit
+    #   `phrase_attente` pendant qu'il tourne (une chaîne, ou plusieurs entre lesquelles on tire au sort) ;
+    # - non_fiable : le résultat vient de l'extérieur (web) : il est encadré par <donnees_externes>.
+    lent: bool = False
+    phrase_attente: "str | tuple[str, ...]" = ""
+    non_fiable: bool = False
 
     @property
     def name(self) -> str:
@@ -446,7 +453,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         manage_contacts,
-        "Gère le carnet d'adresses : ajouter, chercher, lister ou supprimer des contacts (Nom -> Numéro).",
+        "Gère le carnet d'adresses : ajouter, chercher, lister ou supprimer des contacts (Nom -> identifiant Discord). 'add' sur un nom existant met à jour son identifiant.",
         {
             "action": {
                 "type": "string",
@@ -454,24 +461,24 @@ TOOL_DEFS: list[ToolDef] = [
                 "description": "Action à effectuer sur les contacts.",
             },
             "name": {"type": "string", "description": "Le nom du contact (ex: 'Adam', 'Maman')."},
-            "phone_number": {
+            "discord_id": {
                 "type": "string",
-                "description": "Numéro au format international commençant par '+' (ex: '+33612345678').",
+                "description": "Identifiant Discord numérique du contact (15 à 22 chiffres). Requis pour action='add'.",
             },
         },
         ["action"],
     ),
     ToolDef(
-        send_whatsapp_message,
-        "Envoie un message WhatsApp à un destinataire en utilisant soit son prénom/nom enregistrés, soit directement son numéro.",
+        send_discord_message,
+        "Envoie un message Discord : en message privé à un contact du carnet d'adresses, à un identifiant Discord numérique, ou dans un salon ('channel:<id>'). Sans destinataire, utilise le salon par défaut.",
         {
             "recipient": {
                 "type": "string",
-                "description": "Nom du contact dans le carnet d'adresses (ex: 'Adam', 'Maman') OU numéro au format '+33...'.",
+                "description": "Nom du contact (ex: 'Adam') OU identifiant Discord numérique OU 'channel:<id du salon>'. Vide = salon par défaut.",
             },
             "message": {"type": "string", "description": "Le texte du message à envoyer."},
         },
-        ["recipient", "message"],
+        ["message"],
     ),
     ToolDef(
         scheduler_control,
@@ -608,8 +615,40 @@ if settings.RAG_ENABLED:
         )
     )
 
+# Drapeaux par outil (voir ToolDef). Regroupés ici pour les voir d'un coup d'œil ; un outil absent de
+# cette table (ex. un outil personnalisé) n'a aucun drapeau.
+_TOOL_FLAGS: dict[str, dict[str, Any]] = {
+    "browser_control": {
+        "lent": True,
+        "phrase_attente": (
+            "Je m'en occupe sur le web, ça peut prendre un petit moment.",
+            "Je navigue, laisse-moi quelques secondes.",
+        ),
+        "non_fiable": True,
+    },
+    "web_search": {
+        "lent": True,
+        "phrase_attente": ("Je cherche ça sur le web.", "Je regarde ce qu'on trouve sur le sujet."),
+        "non_fiable": True,
+    },
+    "fetch_url": {"lent": True, "phrase_attente": "Je lis la page.", "non_fiable": True},
+    "run_script": {"lent": True, "phrase_attente": "Je lance la commande, un instant."},
+    "search_documents": {"lent": True, "phrase_attente": "Je cherche dans tes documents."},
+    "deep_memory": {"lent": True, "phrase_attente": "Je fouille dans mes souvenirs, une seconde."},
+    "analyze_image": {"lent": True, "phrase_attente": "Je regarde l'image de plus près."},
+    "create_full_project": {"lent": True, "phrase_attente": "Je prépare le projet, ça prend quelques secondes."},
+    "email_control": {"lent": True, "phrase_attente": "Je regarde ta boîte mail."},
+    "calendar_control": {"lent": True, "phrase_attente": "Je consulte ton agenda."},
+}
+
+for _tool in TOOL_DEFS:
+    for _flag, _value in _TOOL_FLAGS.get(_tool.name, {}).items():
+        setattr(_tool, _flag, _value)
+
 AVAILABLE_TOOLS: dict[str, Callable[..., Any]] = {t.name: t.func for t in TOOL_DEFS}
 TOOLS_SCHEMA: list[dict] = [t.to_schema() for t in TOOL_DEFS]
+# Pour retrouver les drapeaux d'un outil à partir de son nom (utilisé par agents/runtime.py).
+TOOL_DEFS_BY_NAME: dict[str, ToolDef] = {t.name: t for t in TOOL_DEFS}
 
 
 def _generate_schema_from_func(func, description: str) -> dict:
