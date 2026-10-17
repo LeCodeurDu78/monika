@@ -8,6 +8,8 @@ import concurrent.futures
 import logging
 import os
 import threading
+import time
+from pathlib import Path
 from typing import Any, Optional
 
 from core.settings import settings
@@ -37,6 +39,88 @@ EXTRACTION_INSTRUCTIONS = (
     "n'extrais rien. Rédige chaque souvenir en français, à la troisième personne "
     "(« L'utilisateur ... »), de façon courte et autonome."
 )
+
+
+# --- suivi du téléchargement du modèle d'embedding ---------------------------------------------
+# Le modèle est chargé dans un thread de fond : les barres de progression de Hugging Face s'y perdent
+# (et gêneraient le prompt « Vous: »). On surveille donc le cache et on affiche de courtes lignes.
+DOWNLOAD_POLL_SECONDS = 3.0
+DOWNLOAD_STALL_SECONDS = 30.0
+_UNUSED_DIRS = ("onnx/", "openvino/")
+_UNUSED_FILES = {"pytorch_model.bin", "tf_model.h5", "rust_model.ot", "flax_model.msgpack"}
+
+
+def _expected_download_bytes(repo_id: str) -> Optional[int]:
+    """Taille attendue du téléchargement (poids + tokenizer), ou None si le Hub ne répond pas."""
+    try:
+        from huggingface_hub import HfApi
+
+        info = HfApi().model_info(repo_id, files_metadata=True, timeout=10)
+    except Exception:
+        return None
+    files = {s.rfilename: (s.size or 0) for s in (info.siblings or [])}
+    has_safetensors = any(name.endswith(".safetensors") for name in files)
+    total = 0
+    for name, size in files.items():
+        if name.startswith(_UNUSED_DIRS) or (has_safetensors and name in _UNUSED_FILES):
+            continue  # sentence-transformers ne télécharge ni les formats ONNX/OpenVINO ni les doublons
+        total += size
+    return total or None
+
+
+def _repo_cache_bytes(repo_id: str) -> int:
+    """Octets déjà présents dans le cache Hugging Face pour ce modèle (fichiers .incomplete compris)."""
+    from huggingface_hub import constants
+
+    blobs = Path(constants.HF_HUB_CACHE) / ("models--" + repo_id.replace("/", "--")) / "blobs"
+    total = 0
+    try:
+        for path in blobs.iterdir():
+            try:
+                total += path.stat().st_size
+            except OSError:
+                pass
+    except OSError:
+        return 0
+    return total
+
+
+def _watch_model_download(repo_id: str, stop: threading.Event) -> None:
+    """Affiche la progression du téléchargement de `repo_id` tant que `stop` n'est pas levé.
+
+    Silencieux si le modèle est déjà en cache. Signale aussi un téléchargement qui ne progresse plus.
+    """
+    expected = _expected_download_bytes(repo_id)
+    start = _repo_cache_bytes(repo_id)
+    if expected and start >= expected:
+        return  # déjà en cache : rien à montrer
+
+    mb = 1024 * 1024
+    last, last_time, last_growth = start, time.monotonic(), time.monotonic()
+    begun = False
+    while not stop.wait(DOWNLOAD_POLL_SECONDS):
+        now, clock = _repo_cache_bytes(repo_id), time.monotonic()
+        if now > last:
+            speed = (now - last) / max(clock - last_time, 0.001) / mb
+            if expected:
+                percent = min(100, int(now * 100 / expected))
+                log(
+                    f"⬇️ [Mémoire] Modèle d'embedding : {now / mb:.0f}/{expected / mb:.0f} Mo "
+                    f"({percent} %) — {speed:.1f} Mo/s"
+                )
+            else:
+                log(f"⬇️ [Mémoire] Modèle d'embedding : {now / mb:.0f} Mo — {speed:.1f} Mo/s")
+            begun, last_growth = True, clock
+        elif begun and clock - last_growth >= DOWNLOAD_STALL_SECONDS:
+            log(
+                f"⏸️ [Mémoire] Le téléchargement du modèle ne progresse plus depuis "
+                f"{int(clock - last_growth)} s ({now / mb:.0f} Mo reçus)."
+            )
+            last_growth = clock  # prochain rappel dans DOWNLOAD_STALL_SECONDS
+        last, last_time = now, clock
+
+    if begun:
+        log("✅ [Mémoire] Modèle d'embedding téléchargé.")
 
 
 def _embedder_config() -> dict[str, Any]:
@@ -128,6 +212,15 @@ class Mem0Memory:
         threading.Thread(target=self._init, daemon=True, name="mem0-init").start()
 
     def _init(self) -> None:
+        # Un modèle d'embedding local (huggingface sans serveur) se télécharge au premier lancement : on le montre.
+        stop_watch = threading.Event()
+        if settings.MEM0_EMBEDDER_PROVIDER.strip().lower() == "huggingface" and not settings.MEM0_EMBEDDER_BASE_URL:
+            threading.Thread(
+                target=_watch_model_download,
+                args=(settings.MEM0_EMBEDDER_MODEL, stop_watch),
+                daemon=True,
+                name="mem0-download-watch",
+            ).start()
         try:
             from mem0 import Memory  # import tardif : mem0ai est une dépendance optionnelle
 
@@ -147,6 +240,7 @@ class Mem0Memory:
                 )
             log(f"⚠️ [Mémoire] mem0 indisponible : {self._error}")
         finally:
+            stop_watch.set()
             self._ready.set()
 
     def _require(self, wait: float) -> Any:

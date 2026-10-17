@@ -1,35 +1,24 @@
 """Agent unique de Monika."""
 
-from config import SYSTEM_PROMPT
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from config import build_persona_prompt
 from agents.runtime import run_react_loop
+from core.settings import settings
 from memory.manager import memory_manager, prompt_section
 from tools.registry import AVAILABLE_TOOLS, TOOLS_SCHEMA
+from tools.guides import GUIDES
 
 MAX_TURNS = 100
 
-AGENT_SYSTEM_PROMPT = (
-    SYSTEM_PROMPT + " "
-    "Tu disposes directement de tous les outils nécessaires (système, fichiers, e-mails, "
-    "calendrier, WhatsApp, contacts, recherche web, météo, Spotify, tâches planifiées et "
-    "rappels, etc.). Utilise-les "
-    "directement dès que c'est pertinent, sans jamais mentionner leur existence ni ta "
-    "façon de procéder, et réponds toujours en français de façon concise.\n\n"
-    "SCÉNARIO DE RÉSERVATION WEB (restaurant, rendez-vous...) via browser_control : pour "
-    "aller jusqu'au bout d'une réservation réelle (pas seulement naviguer/cliquer), le "
-    "déroulé typique est : naviguer vers le site -> list_interactive_elements pour repérer "
-    "le formulaire de recherche de créneaux -> fill_field / select_option pour date, heure, "
-    "nombre de personnes ou motif -> wait_for si les créneaux se chargent en AJAX -> "
-    "click_element sur le créneau choisi -> fill_field pour les coordonnées de contact -> "
-    "AVANT de cliquer sur le bouton final de validation/paiement, récapituler à "
-    "l'utilisateur ce qui va être réservé (date, heure, nombre de personnes/motif, "
-    "coordonnées utilisées, prix éventuel) et obtenir sa confirmation explicite, SAUF si "
-    "l'utilisateur avait déjà donné ces informations précises dans sa demande initiale -> "
-    "click_element sur le bouton de validation -> lire la page de confirmation "
-    "(read_page_content) pour en extraire le numéro/texte de confirmation et le communiquer "
-    "à l'utilisateur. Ne saisis JAMAIS "
-    "d'informations de paiement (numéro de carte bancaire...) sans confirmation explicite de "
-    "l'utilisateur pour cette réservation précise."
-) + prompt_section()
+_TOOLS_NOTE = (
+    "## Outils\n"
+    "Tu disposes d'outils (système, fichiers, e-mails, calendrier, WhatsApp, recherche web, météo, "
+    "Spotify, rappels et tâches planifiées...). Utilise-les directement dès que c'est pertinent. "
+    "Ne parle pas de tes outils dans tes réponses, sauf si on te demande ce que tu sais faire."
+)
 
 # Contextes situationnels passés via process_user_message(context=...).
 # Partagés pour éviter deux formulations jumelles qui divergent avec le temps.
@@ -43,54 +32,99 @@ SCHEDULED_TASK_CONTEXT = (
     "faite, il s'agit maintenant de l'exécuter réellement, pas de la reporter."
 )
 
+_JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+_MOIS = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def _now() -> datetime:
+    try:
+        return datetime.now(ZoneInfo(settings.TIMEZONE))
+    except Exception:  # fuseau inconnu ou base tz absente : heure locale de la machine
+        return datetime.now().astimezone()
+
+
+def _environment_block(now: datetime) -> str:
+    """Date, fuseau et système : sans eux, le modèle invente les dates (« demain », rappels, agenda).
+
+    Seule la date figure ici (elle ne change qu'une fois par jour, ce qui préserve le cache de préfixe
+    du serveur LLM) ; l'heure exacte est ajoutée à chaque message de l'utilisateur.
+    """
+    date_fr = f"{_JOURS[now.weekday()]} {now.day} {_MOIS[now.month - 1]} {now.year}"
+    return (
+        "## Contexte\n"
+        f"- Date du jour : {date_fr}.\n"
+        f"- Fuseau horaire : {settings.TIMEZONE}. L'heure exacte est indiquée à la fin de chaque message de l'utilisateur.\n"
+        f"- Système : Linux. Dossier personnel : {Path.home()}."
+    )
+
+
+def build_system_prompt(voice: bool, context: str = "") -> str:
+    parts = [
+        build_persona_prompt(voice=voice),
+        _environment_block(_now()),
+        _TOOLS_NOTE,
+        prompt_section().strip(),
+    ]
+    parts.extend(GUIDES)
+    if context.strip():
+        parts.append(context.strip())
+    return "\n\n".join(part for part in parts if part)
+
 
 def process_user_message(
     messages: list,
     max_turns: int = MAX_TURNS,
     interactive: bool = True,
     context: str = "",
+    voice: bool = False,
 ) -> str:
-    """Traite le message de l'utilisateur avec un unique agent doté de tous les outils.
+    """Traite le message de l'utilisateur avec un unique agent.
 
-    `context` permet à l'appelant (tâche planifiée...) d'ajouter des
-    consignes situationnelles au prompt système sans que celles-ci soient écrasées : elles sont
-    concaténées à AGENT_SYSTEM_PROMPT plutôt que de le remplacer, ou l'inverse.
+    `context` permet à l'appelant (tâche planifiée...) d'ajouter des consignes situationnelles
+    au prompt système. `voice` choisit le style de réponse (oral et concis, ou texte développé).
     """
+    # Le raisonnement des tours précédents ne doit pas être renvoyé au modèle.
+    for msg in messages:
+        msg.pop("reasoning_content", None)
+
     for i in range(len(messages) - 1, 0, -1):
         if messages[i].get("role") == "system":
             del messages[i]
 
-    system_content = AGENT_SYSTEM_PROMPT
-    if context.strip():
-        system_content = f"{AGENT_SYSTEM_PROMPT} {context.strip()}"
+    user_message = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+    user_text = user_message.get("content") if user_message else None
+    if not isinstance(user_text, str):
+        user_text = ""  # contenu absent ou multimodal : on n'y touche pas
+
+    system_content = build_system_prompt(voice, context)
 
     if not messages or messages[0].get("role") != "system":
         messages.insert(0, {"role": "system", "content": system_content})
     else:
         messages[0]["content"] = system_content
 
-    # Mémoire rapide : les souvenirs pertinents sont ajoutés au message de l'utilisateur POUR CE TOUR
-    # seulement, puis retirés. Les mettre dans le prompt système le ferait changer à chaque tour, ce qui
-    # invaliderait le cache de préfixe du serveur LLM sur tout l'historique ; et ils s'empileraient dans
-    # la conversation s'ils y restaient.
-    user_message = next((m for m in reversed(messages) if m.get("role") == "user"), None)
-    user_text = user_message.get("content") if user_message else None
-    if not isinstance(user_text, str):
-        user_text = ""  # contenu absent ou multimodal : on n'y touche pas
-
-    memory_block = memory_manager.build_context(user_text) if user_text else ""
-    if memory_block:
-        user_message["content"] = user_text + memory_block
+    # Ajouts valables POUR CE TOUR seulement, puis retirés : l'heure exacte et la mémoire rapide.
+    # Les mettre dans le prompt système le ferait changer à chaque tour (cache de préfixe du serveur
+    # LLM invalidé sur tout l'historique) ; et ils s'empileraient dans la conversation s'ils y restaient.
+    turn_addendum = ""
+    if user_text:
+        turn_addendum = f"\n\n[Heure actuelle : {_now():%H:%M}]" + memory_manager.build_context(user_text)
+        user_message["content"] = user_text + turn_addendum
     try:
         reply = run_react_loop(
             messages,
-            TOOLS_SCHEMA,
+            # Tous les outils sont exposés. Les deux structures sont celles du registre (pas des copies) :
+            # un outil créé en cours de tour par create_custom_tool est utilisable tout de suite.
+            lambda: TOOLS_SCHEMA,
             AVAILABLE_TOOLS,
             max_turns=max_turns,
             interactive=interactive,
         )
     finally:
-        if memory_block:
+        if turn_addendum:
             user_message["content"] = user_text
 
     # Capture automatique (en arrière-plan) : seulement pour de vrais échanges avec l'utilisateur. Une tâche

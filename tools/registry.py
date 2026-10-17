@@ -10,6 +10,8 @@ from typing import Any, Callable
 from tools.system.system_tools import open_application, system_control, get_system_stats
 from tools.utils.weather_tools import get_weather
 from tools.system.file_tools import manage_files
+from tools.system.fs_tools import read_file, write_file, edit_file, grep, glob
+from tools.utils.web_tools import fetch_url
 from tools.social.email_tools import email_control
 from tools.utils.search_tools import web_search
 from tools.social.calendar_tools import calendar_control
@@ -23,6 +25,7 @@ from tools.social.whatsapp_tools import send_whatsapp_message
 from tools.social.contact_tools import manage_contacts
 from tools.utils.scheduler_tools import scheduler_control
 from tools.utils.memory_tools import user_memory, deep_memory
+from tools.utils.rag_tools import search_documents
 from core.settings import settings
 
 
@@ -75,8 +78,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         manage_files,
-        "Liste, crée des dossiers ou déplace des fichiers sur l'ordinateur. Pour copier, supprimer, "
-        "renommer ou modifier le contenu d'un fichier, utilise run_script.",
+        "Liste un dossier, crée un dossier ou déplace un fichier. Pour lire, créer ou modifier le contenu d'un fichier, utilise read_file, write_file et edit_file ; pour copier, supprimer ou renommer, utilise run_script.",
         {
             "action": {
                 "type": "string",
@@ -93,12 +95,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         system_control,
-        "Contrôle les fonctionnalités du système Linux : volume GLOBAL de l'OS (volume_up/volume_down, "
-        "via pamixer — affecte tout le son de la machine, pas seulement Spotify), capture d'écran brute "
-        "sans analyse (screenshot — si l'utilisateur veut que Monika LISE l'écran, enchaîne avec "
-        "analyze_image sur le fichier produit), et media_toggle (touche lecture/pause générique envoyée à l'application média "
-        "ayant le focus, quelle qu'elle soit). Pour du volume ou une lecture/pause spécifiquement Spotify, "
-        "préfère spotify_control qui cible cette application précisément.",
+        "Système Linux : volume global (volume_up/volume_down), capture d'écran (screenshot), lecture/pause média générique (media_toggle). Pour Spotify précisément, utilise spotify_control. Pour lire l'écran : screenshot puis analyze_image.",
         {
             "action": {
                 "type": "string",
@@ -141,11 +138,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         web_search,
-        "Effectue des recherches en ligne sur Wikipédia ou sur le Web, pour de l'information EXTERNE et "
-        "publique (actualité, culture générale, prix, comparatifs). Le paramètre 'mode' "
-        "adapte la requête et la source privilégiée selon l'intention (actualités récentes, recherche "
-        "approfondie, prix, comparatif, ou recherche générale) et ne s'applique que pour "
-        "source='duckduckgo'.",
+        "Recherche d'information externe et publique : Wikipédia (culture générale, définitions) ou DuckDuckGo (web, actualité). Le paramètre mode (duckduckgo uniquement) oriente la recherche : search, news, research, price, compare. Ne renvoie que des extraits : pour une question de fond, ouvre ensuite les pages pertinentes avec fetch_url.",
         {
             "source": {
                 "type": "string",
@@ -171,10 +164,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         calendar_control,
-        "Consulte la liste des événements ou ajoute un rendez-vous dans Google Calendar. À réserver aux "
-        "événements structurés avec un horaire de début/fin et éventuellement un lieu (rendez-vous, "
-        "réunion, cours). Pour un simple rappel ponctuel sans notion de durée (\"rappelle-moi de...\"), "
-        "préfère scheduler_control (schedule_type='once').",
+        "Google Calendar : liste, ajoute ou supprime un événement avec horaire (rendez-vous, réunion, cours). Pour un simple rappel sans durée, utilise scheduler_control.",
         {
             "action": {
                 "type": "string",
@@ -222,12 +212,8 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         run_script,
-        "Exécute une commande ou un script Bash dans le terminal local. Outil de dernier recours pour "
-        "tout ce qu'aucun autre outil dédié ne couvre : n'utilise PAS run_script pour lancer une "
-        "application (open_application), gérer des fichiers/dossiers courants (manage_files), contrôler "
-        "le volume/une capture d'écran (system_control), ou créer un projet complet (create_full_project) "
-        "— ces outils dédiés sont plus sûrs et plus lisibles pour l'utilisateur que la commande shell "
-        "équivalente.",
+        "Exécute une commande Bash locale : git, pip/npm, tests, compilation, scripts Python, copie/suppression/renommage de fichiers, outils en ligne de commande. "
+        "Pour lire, écrire ou éditer un fichier, ou chercher dans des fichiers, préfère read_file, write_file, edit_file, grep et glob.",
         {
             "command": {
                 "type": "string",
@@ -235,17 +221,95 @@ TOOL_DEFS: list[ToolDef] = [
             },
             "workdir": {
                 "type": "string",
-                "description": "Le dossier d'exécution de la commande (ex: '/home/adam/Documents/Code/monika').",
+                "description": "Le dossier d'exécution de la commande (ex: '/home/adam/Documents/Code/monika'). Par défaut : dossier personnel.",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Durée maximale en secondes (défaut 120, max 900). À augmenter pour une installation, un build ou une suite de tests longs.",
             },
         },
         ["command"],
     ),
     ToolDef(
+        fetch_url,
+        "Ouvre une page web et en renvoie le texte complet et lisible (article, documentation, fiche produit...). "
+        "À utiliser après web_search pour LIRE les pages dont les liens semblent pertinents, au lieu de te contenter des extraits. "
+        "Le contenu long est paginé : si une note indique une suite, relance avec offset. Ne fonctionne pas pour les pages qui exigent JavaScript ou une connexion (utilise alors browser_control).",
+        {
+            "url": {"type": "string", "description": "URL complète de la page (https://...)."},
+            "max_chars": {
+                "type": "integer",
+                "description": "Nombre maximal de caractères à renvoyer (défaut 15000, max 40000).",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Caractère de départ, pour lire la suite d'une page longue (défaut 0).",
+            },
+        },
+        ["url"],
+    ),
+    ToolDef(
+        read_file,
+        "Lit un fichier texte (code, notes, config, logs...) et renvoie ses lignes numérotées. "
+        "Les longs fichiers se lisent par tranches avec offset et limit. Lis un fichier avant de le modifier.",
+        {
+            "path": {"type": "string", "description": "Chemin du fichier (absolu, relatif au dossier personnel, ou avec ~)."},
+            "offset": {"type": "integer", "description": "Numéro de la première ligne à lire (défaut 1)."},
+            "limit": {"type": "integer", "description": "Nombre maximal de lignes à lire (défaut 2000)."},
+        },
+        ["path"],
+    ),
+    ToolDef(
+        write_file,
+        "Crée un fichier avec le contenu donné, ou écrase entièrement un fichier existant (les dossiers manquants sont créés). "
+        "Pour changer seulement une partie d'un fichier existant, utilise edit_file.",
+        {
+            "path": {"type": "string", "description": "Chemin du fichier à créer ou écraser."},
+            "content": {"type": "string", "description": "Le contenu complet du fichier."},
+        },
+        ["path", "content"],
+    ),
+    ToolDef(
+        edit_file,
+        "Modifie un fichier existant en remplaçant un passage exact par un autre. old_string doit correspondre exactement "
+        "(espaces et indentation compris) et être unique dans le fichier : ajoute des lignes voisines si besoin, ou utilise replace_all.",
+        {
+            "path": {"type": "string", "description": "Chemin du fichier à modifier."},
+            "old_string": {"type": "string", "description": "Le texte exact à remplacer (copié depuis read_file, sans les numéros de ligne)."},
+            "new_string": {"type": "string", "description": "Le texte de remplacement."},
+            "replace_all": {
+                "type": "boolean",
+                "description": "true pour remplacer toutes les occurrences (défaut false : old_string doit alors être unique).",
+            },
+        },
+        ["path", "old_string", "new_string"],
+    ),
+    ToolDef(
+        grep,
+        "Cherche une expression régulière dans le contenu des fichiers texte d'un dossier (récursif, ignore .git, node_modules, venv...). "
+        "Renvoie fichier:ligne: texte.",
+        {
+            "pattern": {"type": "string", "description": "Expression régulière Python à chercher (ex: 'def \\w+_tool', 'TODO')."},
+            "path": {"type": "string", "description": "Dossier ou fichier où chercher (défaut : dossier personnel)."},
+            "include": {"type": "string", "description": "Filtre sur le nom des fichiers (ex: '*.py'). Optionnel."},
+            "ignore_case": {"type": "boolean", "description": "true pour ignorer la casse (défaut false)."},
+            "context": {"type": "integer", "description": "Lignes de contexte avant/après chaque correspondance (défaut 0, max 10)."},
+            "max_results": {"type": "integer", "description": "Nombre maximal de correspondances (défaut 100)."},
+        },
+        ["pattern"],
+    ),
+    ToolDef(
+        glob,
+        "Trouve des fichiers ou dossiers par motif de nom (ex: '**/*.py', 'src/**/test_*.js'), les plus récemment modifiés d'abord.",
+        {
+            "pattern": {"type": "string", "description": "Motif glob ; '**' parcourt les sous-dossiers."},
+            "path": {"type": "string", "description": "Dossier de départ (défaut : dossier personnel)."},
+        },
+        ["pattern"],
+    ),
+    ToolDef(
         analyze_image,
-        "Analyse visuellement un FICHIER image déjà présent sur le disque (photo, capture d'écran "
-        "déjà enregistrée, schéma envoyé par l'utilisateur...) : extraire du texte, lire des erreurs, "
-        "décrire une image. Pour comprendre ce qui est affiché à l'écran EN CE MOMENT, utilise "
-        "system_control(screenshot) puis analyze_image sur le fichier produit.",
+        "Analyse un fichier image présent sur le disque (lire du texte ou une erreur, décrire). Pour l'écran actuel : system_control(screenshot) puis cet outil sur le fichier produit.",
         {
             "image_path": {
                 "type": "string",
@@ -260,7 +324,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         create_custom_tool,
-        "Permet d'écrire et sauvegarder un nouvel outil Python réutilisable lorsque la demande nécessite une fonctionnalité inexistante.",
+        "Écrit et sauvegarde un nouvel outil Python réutilisable quand la fonctionnalité n'existe pas.",
         {
             "tool_name": {
                 "type": "string",
@@ -279,11 +343,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         patch_existing_file,
-        "Modifie un fichier .py déjà existant DANS LE PROJET Monika à partir d'une instruction en langage "
-        "naturel (contrairement à create_custom_tool qui crée un nouvel outil isolé). Sauvegarde toujours "
-        "l'original, valide et TESTE le patch avant de le rendre définitif, et restaure automatiquement le "
-        "fichier d'origine en cas d'échec. À utiliser avec prudence : préfère create_custom_tool quand une "
-        "nouvelle fonctionnalité peut être un outil isolé plutôt qu'une modification d'un fichier existant.",
+        "Modifie un fichier .py du projet Monika selon une instruction en langage naturel (sauvegarde, test, restauration automatique en cas d'échec). À utiliser avec prudence ; pour une nouvelle fonction isolée, préfère create_custom_tool.",
         {
             "file_path": {
                 "type": "string",
@@ -298,23 +358,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         browser_control,
-        "Contrôle un navigateur Firefox géré par Monika elle-même (lancé automatiquement au premier "
-        "besoin, avec un profil persistant dédié — aucun navigateur déjà ouvert requis côté utilisateur) : "
-        "lister/changer d'onglet, naviguer, lire le contenu visible d'une page, lister les éléments "
-        "interactifs (champs/boutons/liens) avec leur vrai nom accessible, cliquer sur un élément, "
-        "remplir un champ, lire la valeur actuelle d'un champ, choisir une option dans une liste "
-        "déroulante, envoyer une touche clavier (utile pour les sélecteurs de date/autocomplétion), "
-        "attendre qu'un élément ou un texte apparaisse (contenu chargé en AJAX, ex: créneaux "
-        "disponibles), ou fermer le navigateur. IMPORTANT : avant de cliquer ou remplir un champ "
-        "sur une page inconnue, utilise d'abord 'list_interactive_elements' pour connaître les libellés "
-        "exacts des éléments plutôt que de deviner une description au hasard — cela évite des tentatives "
-        "ratées et économise des tours d'action. 'navigate' et 'click_element' renvoient déjà un aperçu "
-        "compact de la page résultante : ne rappelle PAS 'read_page_content' juste après pour vérifier "
-        "qu'une action a marché, l'aperçu suffit dans la grande majorité des cas. Pour 'read_page_content', "
-        "utilise full=False (aperçu court, par défaut) sauf besoin réel d'extraire un contenu détaillé "
-        "(liste de résultats, article, formulaire complexe), auquel cas passe full=True. Pour mener une "
-        "réservation web jusqu'au bout (restaurant, rendez-vous...), voir le déroulé détaillé fourni en "
-        "consigne système.",
+        "Contrôle un navigateur Firefox géré par Monika : onglets, navigation, lecture de page, éléments interactifs, clic, saisie, listes déroulantes, touches, attente d'un élément. Sur une page inconnue, appelle d'abord list_interactive_elements pour obtenir les libellés exacts. navigate et click_element renvoient déjà un aperçu de la page : ne relis pas la page juste après. read_page_content : full=False par défaut, full=True seulement pour extraire un contenu détaillé.",
         {
             "action": {
                 "type": "string",
@@ -377,9 +421,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         spotify_control,
-        "Permet de contrôler Spotify spécifiquement : lire de la musique, mettre en pause, passer un "
-        "morceau, changer le VOLUME DE L'APPLICATION SPOTIFY (indépendant du volume global de l'OS, "
-        "voir system_control pour ce dernier) ou chercher des morceaux/playlists.",
+        "Contrôle Spotify : lecture, pause, suivant, précédent, volume de l'application (indépendant du volume système) et recherche de morceaux ou playlists.",
         {
             "action": {
                 "type": "string",
@@ -433,7 +475,7 @@ TOOL_DEFS: list[ToolDef] = [
     ),
     ToolDef(
         scheduler_control,
-        "Planifie l'exécution AUTONOME d'une instruction par Monika elle-même : Monika appelle réellement les outils nécessaires (météo, e-mails, recherche web...) pour accomplir la tâche à l'échéance, sans intervention de l'utilisateur ; convient aussi pour un simple rappel (ex: instruction « rappelle-moi de... »). Une seule fois, tous les jours, ou en boucle à intervalle régulier.",
+        "Planifie une instruction que Monika exécutera elle-même à l'échéance, une fois, chaque jour ou à intervalle régulier. Convient aux rappels (« rappelle-moi de... »).",
         {
             "action": {
                 "type": "string",
@@ -534,6 +576,35 @@ if settings.HINDSIGHT_ENABLED:
                 },
             },
             ["action"],
+        )
+    )
+
+if settings.RAG_ENABLED:
+    TOOL_DEFS.append(
+        ToolDef(
+            search_documents,
+            "Recherche dans les DOCUMENTS PERSONNELS de l'utilisateur (notes, PDF, Word, code, textes de son dossier "
+            "personnel) par le sens ET par mots-clés, avec classement par pertinence. À utiliser pour retrouver ce que "
+            "dit un de SES fichiers quand le chemin est inconnu, ou pour répondre à une question sur le contenu de ses "
+            "documents. Renvoie des extraits avec chemin et position (page, section, lignes) ; pour lire un fichier en "
+            "entier, utilise ensuite read_file. Pas pour le web (web_search/fetch_url), pas pour les souvenirs de "
+            "conversation (deep_memory/user_memory), pas pour chercher un nom de fichier (glob).",
+            {
+                "query": {
+                    "type": "string",
+                    "description": "Ce que tu cherches, avec les mots probables du document (ex: \"contrat de bail "
+                    "clause de résiliation préavis\"), pas la phrase de l'utilisateur telle quelle.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optionnel : restreint la recherche à ce dossier (ou fichier), ex: ~/Documents/Obsidian.",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "Nombre d'extraits à renvoyer (1 à 10, défaut 5).",
+                },
+            },
+            ["query"],
         )
     )
 
