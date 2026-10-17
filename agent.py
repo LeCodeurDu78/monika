@@ -12,6 +12,7 @@ from config import SYSTEM_PROMPT, EXIT_WORDS
 from agents.orchestrator import SCHEDULED_TASK_CONTEXT, process_user_message
 from core.settings import settings
 from core.watcher import start_watcher
+from memory.manager import memory_manager
 from tools.utils.scheduler_tools import pop_due_tasks
 from voice.voice_audio import record_until_silence
 from voice.voice_stt import transcribe
@@ -76,7 +77,7 @@ class Channel:
 def _read_text_input() -> Optional[str]:
     """Lit une ligne au clavier."""
     try:
-        text = input("\nVous: ")
+        text = input("\nToi: ")
     except EOFError:
         return None
     return None if _is_exit(text) else text
@@ -92,7 +93,7 @@ def _read_voice_input() -> Optional[str]:
     if not text:
         return ""
 
-    print(f"Vous (voix): {text}")
+    print(f"Toi (voix): {text}")
     return None if _is_exit(text) else text
 
 
@@ -112,8 +113,16 @@ def _run_session(channel: Channel) -> None:
 
             if channel.drives_avatar:
                 avatar_state.set_state("thinking")
+            # Copie de l'historique : si le tour échoue, on revient à un état cohérent
+            # (pas d'appel d'outil sans résultat) au lieu de faire tomber la session.
+            snapshot = list(messages)
             messages.append({"role": "user", "content": user_text})
-            bot_reply = process_user_message(messages)
+            try:
+                bot_reply = process_user_message(messages, voice=channel.speak_replies)
+            except Exception as e:
+                messages[:] = snapshot
+                print(f"⚠️ [Erreur] {type(e).__name__}: {e}")
+                bot_reply = "Je n'ai pas réussi à traiter ça, une erreur interne s'est produite. Tu peux reformuler ou réessayer."
             channel.deliver(bot_reply)
     except KeyboardInterrupt:
         pass
@@ -130,18 +139,29 @@ def _start_background_watchers(channel: Channel) -> list[threading.Event]:
             task_messages = [{"role": "user", "content": instruction}]
             try:
                 result = process_user_message(
-                    task_messages, interactive=False, context=SCHEDULED_TASK_CONTEXT
+                    task_messages,
+                    interactive=False,
+                    context=SCHEDULED_TASK_CONTEXT,
+                    voice=channel.speak_replies,
                 )
             except Exception as e:
                 result = f"⚠️ Échec de la tâche planifiée #{task_id} : {e}"
             channel.deliver(result, icon="🗓️")
 
-    return [start_watcher(settings.SCHEDULER_CHECK_INTERVAL_SECONDS, _scheduler_tick)]
+    watchers = [start_watcher(settings.SCHEDULER_CHECK_INTERVAL_SECONDS, _scheduler_tick)]
+    if settings.RAG_ENABLED:
+        from rag.indexer import start_rag_indexing
+
+        watchers.append(start_rag_indexing())  # indexation incrémentale des documents, en arrière-plan
+    return watchers
 
 
 def _run_monika(channel: Channel, greeting: str) -> None:
     """Lance une session Monika complète (watchers, boucle, nettoyage) pour un `Channel` donné."""
     print(greeting)
+    # Les mémoires s'initialisent en arrière-plan (chargement du modèle d'embedding, connexion à Hindsight)
+    # pendant que l'avatar et la voix démarrent : elles sont prêtes bien avant le premier message.
+    memory_manager.start()
     start_avatar_server()
     if channel.speak_replies:
         speak("Bonjour, je t'écoute.")
@@ -152,12 +172,13 @@ def _run_monika(channel: Channel, greeting: str) -> None:
     finally:
         for stop_event in stop_events:
             stop_event.set()
+        memory_manager.shutdown()  # envoie les derniers échanges aux mémoires avant de quitter
 
 
 def run_monika() -> None:
     """Lance Monika en mode texte dans le terminal."""
     channel = Channel(get_input=_read_text_input, speak_replies=False, drives_avatar=True)
-    _run_monika(channel, greeting="🤖 Monika Initialisée. Comment puis-je vous aider ?")
+    _run_monika(channel, greeting="🤖 Monika initialisée. Comment puis-je t'aider ?")
 
 
 def run_monika_voice() -> None:

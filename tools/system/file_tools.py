@@ -9,8 +9,10 @@ def manage_files(action: str, path: str, target_folder: str = "") -> str:
         path = os.path.expanduser(path)
 
         if action == "list":
-            files = os.listdir(path)
-            return f"Contenu de '{path}' : {', '.join(files[:20])}"
+            files = sorted(os.listdir(path))
+            names = [f + "/" if os.path.isdir(os.path.join(path, f)) else f for f in files[:200]]
+            more = f" (+{len(files) - 200} autres)" if len(files) > 200 else ""
+            return f"Contenu de '{path}' : {', '.join(names)}{more}"
 
         elif action == "create_dir":
             os.makedirs(path, exist_ok=True)

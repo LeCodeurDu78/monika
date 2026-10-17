@@ -1,0 +1,124 @@
+"""Modèles d'embedding (e5) et de reranking (cross-encoder), chargés à la demande."""
+
+import threading
+from typing import Optional
+
+from core.settings import settings
+
+
+def _resolve_device(requested: str) -> str:
+    if requested.startswith("cuda"):
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return requested
+        except ImportError:
+            pass
+        print(f"⚠️ [RAG] CUDA indisponible, bascule sur le CPU (demandé : {requested}).")
+        return "cpu"
+    return requested
+
+
+class Embedder:
+    """multilingual-e5 : « passage: » pour les documents, « query: » pour les requêtes (obligatoire)."""
+
+    def __init__(self) -> None:
+        self._model = None
+        self._lock = threading.Lock()
+
+    def _ensure(self):
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+
+            device = _resolve_device(settings.RAG_EMBED_DEVICE)
+            print(f"📚 [RAG] Chargement de {settings.RAG_EMBED_MODEL} ({device})...")
+            model = SentenceTransformer(settings.RAG_EMBED_MODEL, device=device)
+            model.max_seq_length = 512
+            if device.startswith("cuda"):
+                model.half()
+            self._model = model
+        return self._model
+
+    def _encode(self, prefix: str, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        with self._lock:  # un seul encodage à la fois (l'indexation et les requêtes se partagent le modèle)
+            model = self._ensure()
+            vectors = model.encode(
+                [prefix + t for t in texts],
+                batch_size=settings.RAG_EMBED_BATCH,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+            )
+        return vectors.tolist()
+
+    def embed_passages(self, texts: list[str]) -> list[list[float]]:
+        return self._encode("passage: ", texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._encode("query: ", [text])[0]
+
+
+class Reranker:
+    """Cross-encoder : note chaque couple (requête, extrait). `score` renvoie None si indisponible."""
+
+    def __init__(self) -> None:
+        self._model = None
+        self._failed = False
+        self._lock = threading.Lock()
+
+    def _ensure(self):
+        if self._model is None and not self._failed:
+            try:
+                from sentence_transformers import CrossEncoder
+
+                device = _resolve_device(settings.RAG_RERANK_DEVICE)
+                print(f"📚 [RAG] Chargement de {settings.RAG_RERANK_MODEL} ({device})...")
+                model = CrossEncoder(settings.RAG_RERANK_MODEL, device=device, max_length=512)
+                if device.startswith("cuda"):
+                    model.model.half()
+                self._model = model
+            except Exception as exc:  # modèle introuvable, hors-ligne... : on retombe sur l'ordre de la fusion
+                self._failed = True
+                print(f"⚠️ [RAG] Reranker indisponible ({type(exc).__name__}: {exc}). Ordre de la fusion conservé.")
+        return self._model
+
+    def score(self, query: str, documents: list[str]) -> Optional[list[float]]:
+        if not documents:
+            return []
+        with self._lock:
+            model = self._ensure()
+            if model is None:
+                return None
+            pairs = [(query, d) for d in documents]
+            kwargs = {"batch_size": settings.RAG_EMBED_BATCH, "show_progress_bar": False}
+            try:  # scores en probabilités (0..1) pour que le seuil RAG_RERANK_MIN_SCORE ait un sens
+                import torch
+
+                scores = model.predict(pairs, activation_fn=torch.nn.Sigmoid(), **kwargs)
+            except TypeError:  # signature différente selon la version : le défaut d'un cross-encoder à 1 label est déjà sigmoïde
+                scores = model.predict(pairs, **kwargs)
+        return [float(s) for s in scores]
+
+
+_embedder: Optional[Embedder] = None
+_reranker: Optional[Reranker] = None
+_singleton_lock = threading.Lock()
+
+
+def get_embedder() -> Embedder:
+    global _embedder
+    with _singleton_lock:
+        if _embedder is None:
+            _embedder = Embedder()
+        return _embedder
+
+
+def get_reranker() -> Reranker:
+    global _reranker
+    with _singleton_lock:
+        if _reranker is None:
+            _reranker = Reranker()
+        return _reranker
